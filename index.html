@@ -76,6 +76,21 @@ nav button span{display:block;font-size:20px;line-height:1.1}
 details summary{min-height:36px;display:flex;align-items:center;cursor:pointer}
 a{color:var(--accent)}
 .kv{display:flex;justify-content:space-between;padding:4px 0}
+.md h3,.md h4,.md h5{margin:14px 0 6px;font-size:15px}
+.md p{margin:6px 0;font-size:14px}
+.md ul{margin:6px 0;padding-left:20px;font-size:14px}
+.md code{background:var(--bg);border-radius:4px;padding:0 4px;font-size:13px}
+.tbl{overflow-x:auto;margin:8px -4px;border:1px solid var(--line);border-radius:10px;-webkit-overflow-scrolling:touch}
+.tbl table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
+.tbl th,.tbl td{padding:7px 9px;font-size:13px;border-top:1px solid var(--line);white-space:nowrap}
+.tbl thead th{background:var(--bg);color:var(--muted);font-weight:600;border-top:0;font-size:12px}
+.tbl tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--bg) 60%,transparent)}
+.tbl th:first-child,.tbl td:first-child{position:sticky;left:0;background:var(--card);font-weight:600;text-align:left;border-right:1px solid var(--line)}
+.tbl thead th:first-child{background:var(--bg)}
+.tbl td.l,.tbl th.l{text-align:left}.tbl td.r,.tbl th.r{text-align:right}.tbl td.c,.tbl th.c{text-align:center}
+.tbl td.neg{color:var(--danger)}.tbl td.pos{color:var(--ok)}
+.tbl td.wrap{white-space:normal;min-width:180px}
+.rephead{margin-top:10px;font-weight:600}
 </style>
 </head>
 <body>
@@ -562,12 +577,55 @@ async function saveConn(){
 
 
 /* ---------- 報告（讀取 GitHub Issues 的最新一份） ---------- */
-function mdToText(md){
-  return String(md||"").replace(/\r/g,"").split("\n").map(l => {
-    if (/^\s*\|?\s*:?-{2,}/.test(l) && /^[\s|:\-]+$/.test(l)) return null;     // 表格分隔列
-    if (/^\s*\|.*\|\s*$/.test(l)) return l.trim().replace(/^\||\|$/g,"").split("|").map(x => x.trim()).join("　｜　");
-    return l.replace(/^#{1,6}\s*/,"").replace(/\*\*(.*?)\*\*/g,"$1").replace(/`([^`]*)`/g,"$1");
-  }).filter(l => l !== null).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+function inline(parent, text){
+  // **粗體**、`程式碼`；其餘一律當純文字（不解析 HTML）
+  const re = /(\*\*[^*]+\*\*|`[^`]+`)/g; let last = 0, m;
+  while ((m = re.exec(text))){
+    if (m.index > last) parent.append(text.slice(last, m.index));
+    const tok = m[0], el = document.createElement(tok[0] === "`" ? "code" : "b");
+    el.textContent = tok[0] === "`" ? tok.slice(1,-1) : tok.slice(2,-2); parent.appendChild(el); last = m.index + tok.length;
+  }
+  if (last < text.length) parent.append(text.slice(last));
+}
+function splitRow(l){ return l.trim().replace(/^\|/,"").replace(/\|$/,"").split("|").map(x => x.trim()); }
+function renderMarkdown(md){
+  const root = document.createElement("div"); root.className = "md";
+  const lines = String(md||"").replace(/\r/g,"").split("\n");
+  for (let i = 0; i < lines.length; i++){
+    const l = lines[i];
+    if (!l.trim()) continue;
+    const hm = l.match(/^(#{1,6})\s*(.*)$/);
+    if (hm){ const h = document.createElement("h" + Math.min(5, Math.max(3, hm[1].length + 1))); inline(h, hm[2]); root.appendChild(h); continue; }
+    if (/^\s*\|/.test(l) && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i+1]) && lines[i+1].includes("-")){
+      const head = splitRow(l), align = splitRow(lines[i+1]).map(c => /^:-+:$/.test(c) ? "c" : /-:$/.test(c) ? "r" : "l");
+      i += 2; const body = [];
+      while (i < lines.length && /^\s*\|/.test(lines[i])){ body.push(splitRow(lines[i])); i++; }
+      i--;
+      const wrap = document.createElement("div"); wrap.className = "tbl";
+      const tb = document.createElement("table"), thd = document.createElement("thead"), tr0 = document.createElement("tr");
+      head.forEach((h, k) => { const th = document.createElement("th"); th.className = align[k] || "l"; inline(th, h); tr0.appendChild(th); });
+      thd.appendChild(tr0); tb.appendChild(thd);
+      const tbd = document.createElement("tbody");
+      for (const r of body){
+        const tr = document.createElement("tr");
+        head.forEach((_, k) => {
+          const td = document.createElement("td"); const v = r[k] ?? ""; td.className = align[k] || "l";
+          if (v.length > 18) td.classList.add("wrap");
+          if (/^\**[+\-−]\d/.test(v) && align[k] === "r"){ td.classList.add(/^\**\+/.test(v) ? "pos" : "neg"); }
+          inline(td, v); tr.appendChild(td);
+        });
+        tbd.appendChild(tr);
+      }
+      tb.appendChild(tbd); wrap.appendChild(tb); root.appendChild(wrap); continue;
+    }
+    if (/^\s*[-*]\s+/.test(l)){
+      const ul = document.createElement("ul");
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])){ const li = document.createElement("li"); inline(li, lines[i].replace(/^\s*[-*]\s+/,"")); ul.appendChild(li); i++; }
+      i--; root.appendChild(ul); continue;
+    }
+    const p = document.createElement("p"); inline(p, l.trim()); root.appendChild(p);
+  }
+  return root;
 }
 async function loadReport(label, name){
   const box = $("repBox"); show(box, "info", "讀取" + name + "中…");
@@ -576,10 +634,9 @@ async function loadReport(label, name){
     if (!list || !list.length){ show(box, "warn", "還沒有「" + name + "」。持股報告每週六自動產生；也可以按下面的「立即更新績效」。月報每月底產生。"); return; }
     const it = list[0];
     box.textContent = "";
-    const h = document.createElement("div"); h.style.cssText = "margin-top:10px;font-weight:600"; h.textContent = it.title;
+    const h = document.createElement("div"); h.className = "rephead"; h.textContent = it.title;
     const d = document.createElement("div"); d.className = "muted"; d.textContent = (it.created_at||"").slice(0,10) + "　" + (it.state === "open" ? "（最新）" : "（已結案）");
-    const pre = document.createElement("div"); pre.style.cssText = "white-space:pre-wrap;word-break:break-word;font-size:14px;margin-top:8px;max-height:60vh;overflow:auto;border-top:1px solid var(--line);padding-top:8px"; pre.textContent = mdToText(it.body);
-    box.append(h, d, pre);
+    box.append(h, d, renderMarkdown(it.body));
   } catch (e){
     show(box, "err", e.status === 403 || e.status === 404
       ? "這組金鑰沒有讀取 Issues 的權限，所以 App 讀不到報告。\n到 GitHub → Settings → Developer settings → Personal access tokens → 你的金鑰 → Edit，把 Issues 設成 Read-only 並儲存（不用換金鑰）。"
