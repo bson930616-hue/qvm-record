@@ -94,6 +94,23 @@ a{color:var(--accent)}
 .tbl td.neg{color:var(--danger)}.tbl td.pos{color:var(--ok)}
 .tbl td.wrap{white-space:normal;min-width:180px}
 .rephead{margin-top:10px;font-weight:600}
+.big{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.gridkv{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin-top:8px}
+.gridkv .k{color:var(--muted);font-size:12px}.gridkv .v{font-weight:600;font-variant-numeric:tabular-nums}
+.pos{color:var(--ok)}.neg{color:var(--danger)}
+.bar{position:relative;height:14px;border-radius:7px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin:4px 0 2px}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:7px 0 0 7px}
+.bar>b{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text)}
+.alloc{margin:12px 0}.alloc .top{display:flex;justify-content:space-between;font-size:14px}
+.alloc .sub{font-size:12px;color:var(--muted)}
+.alloc.warn .bar>i{background:var(--warn)}
+.hcard{border-top:1px solid var(--line);padding:10px 0}
+.hcard:first-of-type{border-top:0}
+.hcard .t{display:flex;justify-content:space-between;align-items:baseline}
+.hcard .t b{font-size:16px}
+.hcard .s{font-size:13px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.lev{display:inline-block;font-size:11px;font-weight:700;border-radius:5px;padding:0 6px;margin-left:6px;background:var(--warn-bg);color:var(--warn)}
+.plan td:last-child,.plan th:last-child{text-align:right}
 .cards{display:grid;gap:10px;margin:8px 0}
 .mcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg)}
 .mcard .ttl{font-weight:700;font-size:15px;margin-bottom:6px}
@@ -153,6 +170,18 @@ a{color:var(--accent)}
 
 <!-- 持股 -->
 <section id="tab-pos" class="hidden">
+  <div class="card" id="ovCard">
+    <h2>資產總覽 <span class="muted" id="ovWhen"></span></h2>
+    <div id="ovBox"><div class="muted">讀取中…</div></div>
+  </div>
+  <div class="card hidden" id="dcaCard">
+    <h2>本月定期定額建議</h2>
+    <div id="dcaBox"></div>
+  </div>
+  <div class="card hidden" id="hCard">
+    <h2>持股明細</h2>
+    <div id="hBox"></div>
+  </div>
   <div class="card">
     <h2>目前持股（依你的紀錄計算）</h2>
     <div id="posBox"></div>
@@ -215,6 +244,11 @@ a{color:var(--accent)}
     <textarea id="sExtra" rows="3" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="00631L 10"></textarea>
     <label for="sThr">偏離幾個百分點就提醒</label>
     <input id="sThr" inputmode="decimal" placeholder="5">
+    <div class="muted" style="margin-top:14px"><b>每月定期定額提醒</b>：填了金額，系統會在提醒日寄 email 告訴你這個月該投多少、投哪裡（補低配的項目）；留空則不提醒</div>
+    <div class="row">
+      <div><label for="sMonthly">每月投入（台幣）</label><input id="sMonthly" inputmode="decimal" placeholder="30000"></div>
+      <div><label for="sDay">每月幾號提醒（1–28）</label><input id="sDay" inputmode="numeric" placeholder="5"></div>
+    </div>
     <div id="cfgMsg"></div>
     <button class="primary" id="btnSaveCfg">儲存部位設定</button>
   </div>
@@ -415,6 +449,94 @@ function holdings(trades){
 /* ---------- 狀態與畫面 ---------- */
 let state = { trades: [], sha: null, loaded: false, coreTrades: [], coreLoaded: false };
 
+function twd(n, sign){ const v = Math.round(Number(n)); return (sign && v > 0 ? "+" : "") + v.toLocaleString("en-US"); }
+function pct(x, d=1){ return x === null || x === undefined || !isFinite(x) ? "–" : (x >= 0 ? "+" : "") + (x * 100).toFixed(d) + "%"; }
+function cls(x){ return x === null || x === undefined || !isFinite(x) ? "" : x >= 0 ? "pos" : "neg"; }
+function el(tag, className, text){ const e = document.createElement(tag); if (className) e.className = className; if (text !== undefined) e.textContent = text; return e; }
+
+async function loadSummary(){
+  state.summary = null;
+  if (!conn().token) return;
+  try {
+    const b = await gh(contentsPath("reports/summary.json")+"?ref=reports");
+    state.summary = JSON.parse(b64decode(b.content||""));
+  } catch (e){ state.summary = null; }
+  renderSummary();
+}
+
+function renderSummary(){
+  const sm = state.summary, box = $("ovBox");
+  box.textContent = ""; $("dcaCard").classList.add("hidden"); $("hCard").classList.add("hidden"); $("ovWhen").textContent = "";
+  const a = sm && sm.allocation;
+  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); return; }
+  $("ovWhen").textContent = "（" + a.asof + "）";
+  box.appendChild(el("div", "muted", "總資產（台幣，匯率 " + a.fx.toFixed(2) + "）"));
+  box.appendChild(el("div", "big num", "NT$ " + twd(a.total_twd)));
+  const tw = a.twd || {}, tot = Object.values(tw).reduce((s, v) => ({ i: s.i + v.invested, g: s.g + v.gain }), { i: 0, g: 0 });
+  if (tot.i > 0){
+    const r = tot.g / tot.i, kv = el("div", "gridkv");
+    const k1 = el("div"), k2 = el("div");
+    k1.append(el("div", "k", "累計損益（台幣）"), el("div", "v " + cls(tot.g), "NT$ " + twd(tot.g, true)));
+    k2.append(el("div", "k", "台幣報酬率（含匯率）"), el("div", "v " + cls(r), pct(r)));
+    kv.append(k1, k2); box.appendChild(kv);
+  }
+  box.appendChild(el("div", "rephead", "資產配置 vs 目標"));
+  for (const r of a.allocation){
+    const warn = r.dev !== null && Math.abs(r.dev) >= a.threshold;
+    const d = el("div", "alloc" + (warn ? " warn" : ""));
+    const top = el("div", "top"), l = el("span"), rr = el("span", "num");
+    l.textContent = r.name; rr.textContent = r.share.toFixed(1) + "%" + (r.target !== null ? " ／目標 " + r.target + "%" : "");
+    top.append(l, rr);
+    const bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = Math.min(100, r.share) + "%"; bar.appendChild(fill);
+    if (r.target !== null){ const m = document.createElement("b"); m.style.left = "calc(" + Math.min(100, r.target) + "% - 1px)"; bar.appendChild(m); }
+    const sub = el("div", "sub", "NT$ " + twd(r.value) + (r.dev !== null ? "　偏離 " + (r.dev >= 0 ? "+" : "") + r.dev.toFixed(1) + " 個百分點" + (warn ? "　⚠" : "") : "　（沒有設定目標）"));
+    d.append(top, bar, sub); box.appendChild(d);
+  }
+  box.appendChild(el("div", "muted", "黑線是目標比例。偏離超過 " + a.threshold + " 個百分點會提醒；做法是新資金補低配項目，不必賣出。"));
+  // 定期定額
+  if (a.dca && a.dca.plan && a.dca.plan.length){
+    $("dcaCard").classList.remove("hidden");
+    const b = $("dcaBox"); b.textContent = "";
+    b.appendChild(el("div", "muted", "每月投入 NT$ " + twd(a.dca.amount) + "（每月 " + a.dca.day + " 日提醒）。依目前偏離，建議這樣分配："));
+    const t = document.createElement("table"); t.className = "plan"; t.innerHTML = "<tr><th>項目</th><th>建議投入（台幣）</th></tr>";
+    for (const p of a.dca.plan){ const tr = document.createElement("tr"); const c1 = document.createElement("td"), c2 = document.createElement("td"); c1.textContent = p.name; c2.textContent = "NT$ " + twd(p.twd); tr.append(c1, c2); t.appendChild(tr); }
+    b.appendChild(t);
+  } else if (a.dca === null){
+    $("dcaCard").classList.remove("hidden");
+    $("dcaBox").textContent = "";
+    $("dcaBox").appendChild(el("div", "muted", "到「設定」填入每月投入金額，就會在每月提醒日收到建議（本月該投多少、投哪裡）。"));
+  }
+  // 持股明細
+  const hb = $("hBox"); hb.textContent = ""; let any = false;
+  for (const c of (a.core || [])){
+    any = true;
+    const cur = c.currency === "TWD" ? "NT$ " : "$";
+    const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = c.ticker;
+    if (c.leveraged) l.appendChild(el("span", "lev", "槓桿"));
+    t.append(l, el("span", "num " + cls(c.return), pct(c.return)));
+    const twr = tw[c.ticker];
+    d.append(t, el("div", "s", c.shares + " 股　現價 " + cur + c.price.toFixed(2) + "　市值 " + cur + twd(c.value)),
+             el("div", "s", "損益 " + cur + twd(c.gain, true) + (twr && c.currency !== "TWD" ? "　台幣報酬 " + pct(twr.return) : "")));
+    hb.appendChild(d);
+  }
+  const st = sm.stock;
+  if (st){
+    for (const h of st.holdings){
+      any = true;
+      const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = h.ticker; 
+      t.append(l, el("span", "num " + cls(h.return), pct(h.return)));
+      d.append(t, el("div", "s", (h.shares > 0 ? h.shares + " 股　成本 $" + (h.avg_cost ? h.avg_cost.toFixed(2) : "–") + "　現價 $" + h.price.toFixed(2) : "已賣出")),
+               el("div", "s", "市值 $" + twd(h.value) + "　損益 $" + twd(h.gain, true) + "　同金額買 SPY：$" + twd(h.spy_gain, true)));
+      hb.appendChild(d);
+    }
+    if (st.total && st.benchmark){
+      const diff = st.total.gain - st.benchmark.gain;
+      hb.appendChild(el("div", "msg info", "選股部位累計損益 $" + twd(st.total.gain, true) + "（" + pct(st.total.return) + "），同金額買 SPY 為 $" + twd(st.benchmark.gain, true) + "（" + pct(st.benchmark.return) + "）；" + (diff >= 0 ? "多" : "少") + " $" + twd(Math.abs(diff)) + "。持有時間短時多半是運氣，至少看一到兩年。"));
+    }
+  }
+  if (any) $("hCard").classList.remove("hidden");
+}
+
 function setBanner(kind, text){ show($("banner"), kind, text); }
 
 async function refresh(){
@@ -434,6 +556,7 @@ async function refresh(){
   }
   render();
   loadCfg();
+  loadSummary();
 }
 
 function render(){
@@ -581,6 +704,7 @@ async function loadCfg(){
     const get = k => { const r = cfgRows.find(r => (r[0]||"").trim() === k); return r ? (r[1]||"").trim() : ""; };
     $("sBudget").value = get("選股部位預算"); $("sCap").value = get("單一股票上限").replace("%","");
     $("sT0050").value = get("目標比例_0050"); $("sTVOO").value = get("目標比例_VOO"); $("sTStock").value = get("目標比例_選股"); $("sThr").value = get("配置提醒門檻");
+    $("sMonthly").value = get("每月定期定額台幣"); $("sDay").value = get("定期定額提醒日");
     $("sExtra").value = cfgRows.filter(r => (r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)))
       .map(r => (r[0]||"").trim().slice(5) + " " + (r[1]||"").trim()).join("\n");
   } catch (e){ show($("cfgMsg"), "err", e.message); }
@@ -592,6 +716,9 @@ async function saveCfg(){
   if (c !== "" && !(num(c) > 0 && num(c) <= 100)) { show(msg, "err", "單一股票上限需為 1–100 的百分比，或留空"); return; }
   const tg = { "0050": $("sT0050").value.trim().replace("%",""), "VOO": $("sTVOO").value.trim().replace("%",""), "選股": $("sTStock").value.trim().replace("%","") };
   const thr = $("sThr").value.trim().replace("%","");
+  const monthly = $("sMonthly").value.trim().replace(/,/g,"").replace(/^NT\$/i,""), rday = $("sDay").value.trim();
+  if (monthly !== "" && !(num(monthly) > 0)) { show(msg, "err", "每月投入需為正數（台幣），或留空"); return; }
+  if (rday !== "" && !(Number.isInteger(num(rday)) && num(rday) >= 1 && num(rday) <= 28)) { show(msg, "err", "提醒日需為 1–28 的整數，或留空"); return; }
   const extra = {};
   for (const line of $("sExtra").value.split("\n").map(l => l.trim()).filter(Boolean)){
     const m = line.match(/^([A-Za-z0-9\-]{1,10})\s+([\d.]+)%?$/);
@@ -616,7 +743,7 @@ async function saveCfg(){
       rows = rows.filter(r => !((r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)) && !(((r[0]||"").trim().slice(5)) in extra)));
       set("目標比例_0050", tg["0050"]); set("目標比例_VOO", tg["VOO"]); set("目標比例_選股", tg["選股"]);
       for (const [k, v] of Object.entries(extra)) set("目標比例_" + k, v);
-      set("配置提醒門檻", thr);
+      set("配置提醒門檻", thr); set("每月定期定額台幣", monthly); set("定期定額提醒日", rday);
       try { const r = await writeFile(FILES.cfg, toCSV(rows), f.sha, "App：更新部位設定"); cfgSha = r && r.content ? r.content.sha : null; break; }
       catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
     }
