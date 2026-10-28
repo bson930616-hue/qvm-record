@@ -113,25 +113,29 @@ a{color:var(--accent)}
 <section id="tab-add">
   <div class="card">
     <h2>新增一筆交易</h2>
+    <div class="seg" role="group" aria-label="帳戶" style="margin-bottom:10px">
+      <button type="button" id="acctUs" class="on buy">選股（美股）</button>
+      <button type="button" id="acctCore">大盤（0050／VOO）</button>
+    </div>
     <div class="seg" role="group" aria-label="買或賣">
       <button type="button" id="actBuy" class="on buy">買</button>
       <button type="button" id="actSell">賣</button>
     </div>
     <label for="fDate">成交日</label>
     <input id="fDate" type="date">
-    <label for="fTicker">代號（美股）</label>
+    <label for="fTicker" id="lblTicker">代號（美股）</label>
     <input id="fTicker" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="例如 PYPL、BRK-B">
     <div class="row">
       <div><label for="fShares">股數</label><input id="fShares" inputmode="decimal" placeholder="例如 1 或 0.5"></div>
-      <div><label for="fPrice">每股成交價（美元）</label><input id="fPrice" inputmode="decimal" placeholder="例如 54.02"></div>
+      <div><label for="fPrice" id="lblPrice">每股成交價（美元）</label><input id="fPrice" inputmode="decimal" placeholder="例如 54.02"></div>
     </div>
     <div class="row">
-      <div><label for="fFee">手續費（美元）</label><input id="fFee" inputmode="decimal" placeholder="0"></div>
+      <div><label for="fFee" id="lblFee">手續費（美元）</label><input id="fFee" inputmode="decimal" placeholder="0"></div>
       <div><label for="fNote">備註（可空白）</label><input id="fNote" placeholder="例如 第一次買進"></div>
     </div>
     <div id="addMsg"></div>
     <button class="primary" id="btnAdd">儲存這筆交易</button>
-    <div class="muted" style="margin-top:8px">儲存後會直接寫進 GitHub 的 V10_交易紀錄.csv。</div>
+    <div class="muted" style="margin-top:8px" id="addHint">儲存後會直接寫進 GitHub 的 V10_交易紀錄.csv。</div>
   </div>
 </section>
 
@@ -198,6 +202,14 @@ a{color:var(--accent)}
     <input id="sBudget" inputmode="decimal" placeholder="例如 1000">
     <label for="sCap">單一股票上限（%）</label>
     <input id="sCap" inputmode="decimal" placeholder="例如 25">
+    <div class="muted" style="margin-top:14px"><b>整體資產配置目標（%）</b>：0050、VOO、選股三項合計要等於 100；留空代表不追蹤</div>
+    <div class="row">
+      <div><label for="sT0050">0050</label><input id="sT0050" inputmode="decimal" placeholder="40"></div>
+      <div><label for="sTVOO">VOO</label><input id="sTVOO" inputmode="decimal" placeholder="40"></div>
+      <div><label for="sTStock">選股</label><input id="sTStock" inputmode="decimal" placeholder="20"></div>
+    </div>
+    <label for="sThr">偏離幾個百分點就提醒</label>
+    <input id="sThr" inputmode="decimal" placeholder="5">
     <div id="cfgMsg"></div>
     <button class="primary" id="btnSaveCfg">儲存部位設定</button>
   </div>
@@ -222,7 +234,7 @@ const LS = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
-const FILES = { trades: "V10_交易紀錄.csv", cfg: "V10_設定.csv" };
+const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv" };
 const HEADER = ["日期","代號","動作","股數","價格","手續費","備註"];
 const DEFAULT = { owner: "bson930616-hue", repo: "-qvm-v10-research", branch: "main" };
 
@@ -334,7 +346,7 @@ async function readFile(file){
     // 大於 1MB 時 content 為空；交易紀錄不會這麼大
     return { text: b64decode(b.content||""), sha: b.sha };
   } catch (e){
-    if (e.status === 404 && file === FILES.cfg) return { text: "", sha: null, missing: true };
+    if (e.status === 404 && (file === FILES.cfg || file === FILES.core)) return { text: "", sha: null, missing: true };
     throw e;
   }
 }
@@ -396,7 +408,7 @@ function holdings(trades){
 }
 
 /* ---------- 狀態與畫面 ---------- */
-let state = { trades: [], sha: null, loaded: false };
+let state = { trades: [], sha: null, loaded: false, coreTrades: [], coreLoaded: false };
 
 function setBanner(kind, text){ show($("banner"), kind, text); }
 
@@ -406,8 +418,10 @@ async function refresh(){
   if (!c.token){ state.loaded = false; render(); switchTab("set"); setBanner("warn","第一次使用：請先在這一頁貼上存取金鑰（下方有取得步驟）。"); return; }
   try {
     setBanner("info","讀取中…");
-    const f = await readFile(FILES.trades);
+    const f = await readFile(FILES.us);
     state.sha = f.sha; state.trades = parseTrades(f.text).trades; state.loaded = true;
+    const fc = await readFile(FILES.core);
+    state.coreTrades = fc.missing ? [] : parseTrades(fc.text).trades; state.coreLoaded = true;
     setBanner("", "");
   } catch (e){
     state.loaded = false;
@@ -421,46 +435,56 @@ function render(){
   const c = conn();
   $("lnkHold").href = "https://github.com/"+c.owner+"/"+c.repo+"/issues?q=is%3Aissue+label%3Aqvm-holdings";
   $("lnkMonth").href = "https://github.com/"+c.owner+"/"+c.repo+"/issues?q=is%3Aissue+label%3Aqvm-monthly";
-  // 列表
+  // 列表（選股與大盤合併，依日期排序）
   const list = $("tradeList"); list.textContent = "";
-  $("listCount").textContent = state.loaded ? "（共 " + state.trades.length + " 筆）" : "";
-  const rows = state.trades.map((t,i) => ({t,i})).sort((a,b) => b.t.date.localeCompare(a.t.date) || b.i - a.i);
+  const all = [...state.trades.map((t,i) => ({t,i,acct:"us"})), ...state.coreTrades.map((t,i) => ({t,i,acct:"core"}))];
+  $("listCount").textContent = state.loaded ? "（共 " + all.length + " 筆）" : "";
+  const rows = all.sort((a,b) => b.t.date.localeCompare(a.t.date) || b.i - a.i);
   if (!rows.length) list.appendChild(Object.assign(document.createElement("div"), { className:"muted", textContent: state.loaded ? "還沒有交易。到「記錄」新增第一筆。" : "" }));
-  for (const {t,i} of rows){
+  for (const {t,i,acct} of rows){
     const d = document.createElement("div"); d.className = "trade";
     const m = document.createElement("div"); m.className = "main";
     const l1 = document.createElement("div");
     const b = document.createElement("span"); b.className = "badge " + (t.action === "買" ? "buy" : "sell"); b.textContent = t.action;
     const tk = document.createElement("b"); tk.textContent = t.ticker;
     l1.append(b, tk);
+    if (acct === "core"){ const bd = document.createElement("span"); bd.className = "badge"; bd.style.cssText = "background:var(--bg);color:var(--muted);margin-left:6px"; bd.textContent = "大盤"; l1.appendChild(bd); }
     const l2 = document.createElement("div"); l2.className = "muted num";
-    l2.textContent = t.date + "　" + t.shares + " 股 × $" + t.price + (t.fee ? "　手續費 $"+t.fee : "") + (t.note ? "　" + t.note : "");
+    const cur = isTwd(t.ticker) ? "NT$" : "$";
+    l2.textContent = t.date + "　" + t.shares + " 股 × " + cur + t.price + (t.fee ? "　手續費 " + cur + t.fee : "") + (t.note ? "　" + t.note : "");
     m.append(l1, l2);
     const del = document.createElement("button"); del.className = "ghost danger"; del.textContent = "刪除";
-    del.addEventListener("click", () => removeTrade(i));
+    del.addEventListener("click", () => removeTrade(acct, i));
     d.append(m, del); list.appendChild(d);
   }
   // 持股
   const box = $("posBox"); box.textContent = "";
   if (state.loaded){
-    const h = holdings(state.trades);
-    if (h.errors.length) { const e = document.createElement("div"); e.className = "msg err"; e.textContent = "交易紀錄有矛盾：\n" + h.errors.join("\n"); box.appendChild(e); }
-    if (!h.out.length) box.appendChild(Object.assign(document.createElement("div"), { className:"muted", textContent:"目前沒有持股。" }));
-    else {
-      const tb = document.createElement("table");
-      tb.innerHTML = "<tr><th>代號</th><th>股數</th><th>平均成本</th><th>成本合計</th></tr>";
-      let total = 0;
-      for (const p of h.out){
-        total += p.cost;
-        const tr = document.createElement("tr");
-        [p.ticker, fmt(p.shares, 4).replace(/\.?0+$/,""), "$"+fmt(p.avg), "$"+fmt(p.cost)].forEach(x => { const td = document.createElement("td"); td.textContent = x; tr.appendChild(td); });
-        tb.appendChild(tr);
-      }
-      box.appendChild(tb);
-      const s = document.createElement("div"); s.className = "kv"; s.style.marginTop = "8px";
-      s.innerHTML = "<span class='muted'>成本合計</span><b class='num'></b>"; s.querySelector("b").textContent = "$" + fmt(total);
-      box.appendChild(s);
-    }
+    posSection(box, "選股（美元）", state.trades, "紀錄");
+    posSection(box, "大盤（0050 為台幣、VOO 為美元）", state.coreTrades, "大盤紀錄", true);
+  }
+}
+function isTwd(ticker){ return /^\d/.test(String(ticker)); }
+function posSection(box, title, trades, label, mixed){
+  const h3 = document.createElement("div"); h3.className = "rephead"; h3.textContent = title; box.appendChild(h3);
+  const h = holdings(trades);
+  if (h.errors.length) { const e = document.createElement("div"); e.className = "msg err"; e.textContent = label + "有矛盾：\n" + h.errors.join("\n"); box.appendChild(e); }
+  if (!h.out.length){ box.appendChild(Object.assign(document.createElement("div"), { className:"muted", textContent:"目前沒有持股。" })); return; }
+  const tb = document.createElement("table");
+  tb.innerHTML = "<tr><th>代號</th><th>股數</th><th>平均成本</th><th>成本合計</th></tr>";
+  const totals = { "$": 0, "NT$": 0 };
+  for (const p of h.out){
+    const cur = isTwd(p.ticker) ? "NT$" : "$"; totals[cur] += p.cost;
+    const tr = document.createElement("tr");
+    [p.ticker, fmt(p.shares, 4).replace(/\.?0+$/,""), cur+fmt(p.avg), cur+fmt(p.cost)].forEach(x => { const td = document.createElement("td"); td.textContent = x; tr.appendChild(td); });
+    tb.appendChild(tr);
+  }
+  box.appendChild(tb);
+  for (const cur of ["$", "NT$"]){
+    if (!totals[cur]) continue;
+    const s = document.createElement("div"); s.className = "kv"; s.style.marginTop = "6px";
+    s.innerHTML = "<span class='muted'>成本合計</span><b class='num'></b>"; s.querySelector("b").textContent = cur + fmt(totals[cur]);
+    box.appendChild(s);
   }
 }
 
@@ -471,16 +495,17 @@ function switchTab(name){
 }
 
 /* ---------- 寫入（遇到版本衝突時重讀再試一次） ---------- */
-async function mutateTrades(mutator, message){
+async function mutateTrades(acct, mutator, message){
+  const file = acct === "core" ? FILES.core : FILES.us;
   for (let attempt = 0; attempt < 2; attempt++){
-    const f = await readFile(FILES.trades);
+    const f = await readFile(file);
     const parsed = parseTrades(f.text);
     const next = mutator(parsed.trades);
     const h = holdings(next);
     if (h.errors.length) throw new Error("這樣會造成紀錄矛盾，沒有儲存：\n" + h.errors.join("\n"));
     try {
-      const r = await writeFile(FILES.trades, serializeTrades(next), f.sha, message);
-      state.trades = next; state.sha = r && r.content ? r.content.sha : null; state.loaded = true;
+      const r = await writeFile(file, serializeTrades(next), f.sha, message);
+      if (acct === "core") { state.coreTrades = next; state.coreLoaded = true; } else { state.trades = next; state.sha = r && r.content ? r.content.sha : null; state.loaded = true; }
       return;
     } catch (e){
       if (String(e.message).startsWith("conflict:") && attempt === 0) continue;
@@ -489,6 +514,16 @@ async function mutateTrades(mutator, message){
   }
 }
 
+let acct = "us";
+function setAcct(a){
+  acct = a;
+  $("acctUs").className = a === "us" ? "on buy" : ""; $("acctCore").className = a === "core" ? "on buy" : "";
+  $("lblTicker").textContent = a === "core" ? "代號（0050、VOO）" : "代號（美股）";
+  $("fTicker").placeholder = a === "core" ? "例如 0050 或 VOO" : "例如 PYPL、BRK-B";
+  $("lblPrice").textContent = a === "core" ? "每股成交價（0050 填台幣、VOO 填美元）" : "每股成交價（美元）";
+  $("lblFee").textContent = a === "core" ? "手續費（0050 台幣、VOO 美元）" : "手續費（美元）";
+  $("addHint").textContent = "儲存後會直接寫進 GitHub 的 " + (a === "core" ? FILES.core : FILES.us) + "。";
+}
 let action = "買";
 function setAction(a){
   action = a;
@@ -503,11 +538,12 @@ async function addTrade(){
               fee: $("fFee").value.trim().replace(/,/g,"").replace(/^\$/,""), note: $("fNote").value.trim() };
   const problems = validateTrade(t);
   if (problems.length){ show(msg, "err", problems.join("\n")); return; }
-  if (state.loaded && state.trades.some(x => x.date === t.date && x.ticker === t.ticker && x.action === t.action &&
+  const pool = acct === "core" ? state.coreTrades : state.trades;
+  if (state.loaded && pool.some(x => x.date === t.date && x.ticker === t.ticker && x.action === t.action &&
         num(x.shares) === num(t.shares) && num(x.price) === num(t.price)) && !confirm("已經有一筆完全相同的交易，確定還要再存一筆嗎？")) return;
   const btn = $("btnAdd"); btn.disabled = true; show(msg, "info", "儲存中…");
   try {
-    await mutateTrades(ts => [...ts, t], "App：" + t.action + " " + t.ticker + " " + t.shares + " 股 (" + t.date + ")");
+    await mutateTrades(acct, ts => [...ts, t], "App：" + (acct === "core" ? "大盤 " : "") + t.action + " " + t.ticker + " " + t.shares + " 股 (" + t.date + ")");
     show(msg, "ok", "已儲存：" + t.action + " " + t.ticker + " " + t.shares + " 股 @ $" + t.price);
     ["fTicker","fShares","fPrice","fFee","fNote"].forEach(id => $(id).value = "");
     render();
@@ -515,16 +551,16 @@ async function addTrade(){
   btn.disabled = false;
 }
 
-async function removeTrade(i){
-  const t = state.trades[i];
+async function removeTrade(acct, i){
+  const t = (acct === "core" ? state.coreTrades : state.trades)[i];
   if (!confirm("刪除這筆？\n" + t.date + " " + t.action + " " + t.ticker + " " + t.shares + " 股 @ $" + t.price)) return;
   const msg = $("listMsg"); show(msg, "info", "刪除中…");
   try {
-    await mutateTrades(ts => {
+    await mutateTrades(acct, ts => {
       const j = ts.findIndex(x => x.date === t.date && x.ticker === t.ticker && x.action === t.action && x.shares === t.shares && x.price === t.price && x.fee === t.fee && x.note === t.note);
       if (j < 0) throw new Error("這筆在 GitHub 上已經找不到（可能已被修改），請重新整理。");
       return ts.filter((_, k) => k !== j);
-    }, "App：刪除 " + t.ticker + " " + t.date);
+    }, "App：刪除 " + (acct === "core" ? "大盤 " : "") + t.ticker + " " + t.date);
     show(msg, "ok", "已刪除。"); render();
   } catch (e){ show(msg, "err", e.message); }
 }
@@ -539,6 +575,7 @@ async function loadCfg(){
     cfgRows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","25","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
     const get = k => { const r = cfgRows.find(r => (r[0]||"").trim() === k); return r ? (r[1]||"").trim() : ""; };
     $("sBudget").value = get("選股部位預算"); $("sCap").value = get("單一股票上限").replace("%","");
+    $("sT0050").value = get("目標比例_0050"); $("sTVOO").value = get("目標比例_VOO"); $("sTStock").value = get("目標比例_選股"); $("sThr").value = get("配置提醒門檻");
   } catch (e){ show($("cfgMsg"), "err", e.message); }
 }
 async function saveCfg(){
@@ -546,6 +583,12 @@ async function saveCfg(){
   const b = $("sBudget").value.trim().replace(/,/g,""), c = $("sCap").value.trim().replace("%","");
   if (b !== "" && !(num(b) > 0)) { show(msg, "err", "預算需為正數（美元），或留空"); return; }
   if (c !== "" && !(num(c) > 0 && num(c) <= 100)) { show(msg, "err", "單一股票上限需為 1–100 的百分比，或留空"); return; }
+  const tg = { "0050": $("sT0050").value.trim().replace("%",""), "VOO": $("sTVOO").value.trim().replace("%",""), "選股": $("sTStock").value.trim().replace("%","") };
+  const thr = $("sThr").value.trim().replace("%","");
+  const given = Object.values(tg).filter(v => v !== "");
+  if (given.some(v => !(num(v) >= 0 && num(v) <= 100))) { show(msg, "err", "目標比例需為 0–100 的數字，或留空"); return; }
+  if (given.length && Math.abs(Object.values(tg).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0) - 100) > 0.5) { show(msg, "err", "0050、VOO、選股的目標比例合計要等於 100（目前 " + Object.values(tg).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0) + "）"); return; }
+  if (thr !== "" && !(num(thr) > 0 && num(thr) <= 50)) { show(msg, "err", "偏離提醒需為 1–50 的百分點，或留空"); return; }
   const btn = $("btnSaveCfg"); btn.disabled = true; show(msg, "info", "儲存中…");
   try {
     for (let attempt = 0; attempt < 2; attempt++){
@@ -553,6 +596,7 @@ async function saveCfg(){
       let rows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
       const set = (k, v) => { let r = rows.find(r => (r[0]||"").trim() === k); if (!r){ r = [k,"",""]; rows.push(r); } while (r.length < 3) r.push(""); r[1] = v; };
       set("選股部位預算", b); set("單一股票上限", c);
+      set("目標比例_0050", tg["0050"]); set("目標比例_VOO", tg["VOO"]); set("目標比例_選股", tg["選股"]); set("配置提醒門檻", thr);
       try { const r = await writeFile(FILES.cfg, toCSV(rows), f.sha, "App：更新部位設定"); cfgSha = r && r.content ? r.content.sha : null; break; }
       catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
     }
@@ -706,6 +750,8 @@ document.querySelectorAll("nav button").forEach(b => b.addEventListener("click",
   switchTab(b.dataset.tab);
   if (b.dataset.tab === "list" || b.dataset.tab === "pos") refresh();
 }));
+$("acctUs").addEventListener("click", () => setAcct("us"));
+$("acctCore").addEventListener("click", () => setAcct("core"));
 $("actBuy").addEventListener("click", () => setAction("買"));
 $("actSell").addEventListener("click", () => setAction("賣"));
 $("btnAdd").addEventListener("click", addTrade);
