@@ -1,5 +1,5 @@
 // 只快取 App 外殼；GitHub API 一律走網路，不快取任何資料。
-const CACHE = "qvm-app-v10";
+const CACHE = "qvm-app-v11";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => {

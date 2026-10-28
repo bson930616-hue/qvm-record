@@ -234,14 +234,13 @@ a{color:var(--accent)}
     <input id="sBudget" inputmode="decimal" placeholder="例如 1000">
     <label for="sCap">單一股票上限（%）</label>
     <input id="sCap" inputmode="decimal" placeholder="例如 25">
-    <div class="muted" style="margin-top:14px"><b>整體資產配置目標（%）</b>：0050、VOO、選股三項合計要等於 100；留空代表不追蹤</div>
+    <div class="muted" style="margin-top:14px"><b>整體資產配置目標（%）</b>：ETF（含 0050、VOO、00631L 等所有在「大盤」帳戶的 ETF）與個股（選股）兩大類，合計 100；留空代表不追蹤</div>
     <div class="row">
-      <div><label for="sT0050">0050</label><input id="sT0050" inputmode="decimal" placeholder="40"></div>
-      <div><label for="sTVOO">VOO</label><input id="sTVOO" inputmode="decimal" placeholder="40"></div>
-      <div><label for="sTStock">選股</label><input id="sTStock" inputmode="decimal" placeholder="20"></div>
+      <div><label for="sTStock">個股（選股）</label><input id="sTStock" inputmode="decimal" placeholder="50"></div>
+      <div><label for="sTEtf">ETF 合計</label><input id="sTEtf" inputmode="decimal" placeholder="50" readonly></div>
     </div>
-    <label for="sExtra">其他持有的 ETF（每行一個：代號 空格 目標%，例如 00631L 10）</label>
-    <textarea id="sExtra" rows="3" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="00631L 10"></textarea>
+    <label for="sExtra">ETF 內部想怎麼分（每行：代號 空格 %，合計 100，例如 0050 50）。沒列到的 ETF 仍算在 ETF 內，但不會被建議買進</label>
+    <textarea id="sExtra" rows="3" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="0050 50&#10;VOO 50"></textarea>
     <label for="sThr">偏離幾個百分點就提醒</label>
     <input id="sThr" inputmode="decimal" placeholder="5">
     <div class="muted" style="margin-top:14px"><b>每月定期定額提醒</b>：填了金額，系統會在提醒日寄 email 告訴你這個月該投多少、投哪裡（補低配的項目）；留空則不提醒</div>
@@ -490,7 +489,13 @@ function renderSummary(){
     const bar = el("div", "bar"), fill = document.createElement("i"); fill.style.width = Math.min(100, r.share) + "%"; bar.appendChild(fill);
     if (r.target !== null){ const m = document.createElement("b"); m.style.left = "calc(" + Math.min(100, r.target) + "% - 1px)"; bar.appendChild(m); }
     const sub = el("div", "sub", "NT$ " + twd(r.value) + (r.dev !== null ? "　偏離 " + (r.dev >= 0 ? "+" : "") + r.dev.toFixed(1) + " 個百分點" + (warn ? "　⚠" : "") : "　（沒有設定目標）"));
-    d.append(top, bar, sub); box.appendChild(d);
+    d.append(top, bar, sub);
+    for (const c of (r.children || [])){
+      const row = el("div", "sub"); row.style.cssText = "display:flex;justify-content:space-between;margin:4px 0 0 12px;font-size:12px";
+      const l2 = el("span", "", "└ " + c.name), r2 = el("span", "num", c.share.toFixed(0) + "% 佔 ETF" + (c.target !== null ? "／內部目標 " + c.target + "%" : "") + "　NT$ " + twd(c.value));
+      row.append(l2, r2); d.appendChild(row);
+    }
+    box.appendChild(d);
   }
   box.appendChild(el("div", "muted", "黑線是目標比例。偏離超過 " + a.threshold + " 個百分點會提醒；做法是新資金補低配項目，不必賣出。"));
   // 定期定額
@@ -717,10 +722,16 @@ async function loadCfg(){
     cfgRows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","25","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
     const get = k => { const r = cfgRows.find(r => (r[0]||"").trim() === k); return r ? (r[1]||"").trim() : ""; };
     $("sBudget").value = get("選股部位預算"); $("sCap").value = get("單一股票上限").replace("%","");
-    $("sT0050").value = get("目標比例_0050"); $("sTVOO").value = get("目標比例_VOO"); $("sTStock").value = get("目標比例_選股"); $("sThr").value = get("配置提醒門檻");
+    const tgt = {}; for (const r of cfgRows) { const k = (r[0]||"").trim(); if (k.startsWith("目標比例_")) tgt[k.slice(5)] = (r[1]||"").trim(); }
+    const split = {}; for (const r of cfgRows) { const k = (r[0]||"").trim(); if (k.startsWith("ETF內部比例_")) split[k.slice(8)] = (r[1]||"").trim(); }
+    let stockT = tgt["選股"] ?? "", etfT = tgt["ETF"];
+    if (etfT === undefined){          // 舊格式（逐檔設定）：ETF 合計＝非選股的加總，內部比例依原比例換算
+      const names = Object.keys(tgt).filter(k => k !== "選股"); etfT = names.length ? String(names.reduce((s, k) => s + (num(tgt[k]) || 0), 0)) : "";
+      if (!Object.keys(split).length && names.length){ const tot = names.reduce((s, k) => s + (num(tgt[k]) || 0), 0); if (tot > 0) names.forEach(k => { if ((num(tgt[k]) || 0) > 0) split[k] = String(Math.round((num(tgt[k]) / tot) * 1000) / 10); }); }
+    }
+    $("sTStock").value = stockT; $("sTEtf").value = etfT; $("sThr").value = get("配置提醒門檻");
+    $("sExtra").value = Object.entries(split).map(([k, v]) => k + " " + v).join("\n");
     $("sMonthly").value = get("每月定期定額台幣"); $("sDay").value = get("定期定額提醒日");
-    $("sExtra").value = cfgRows.filter(r => (r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)))
-      .map(r => (r[0]||"").trim().slice(5) + " " + (r[1]||"").trim()).join("\n");
   } catch (e){ show($("cfgMsg"), "err", e.message); }
 }
 async function saveCfg(){
@@ -728,25 +739,24 @@ async function saveCfg(){
   const b = $("sBudget").value.trim().replace(/,/g,""), c = $("sCap").value.trim().replace("%","");
   if (b !== "" && !(num(b) > 0)) { show(msg, "err", "預算需為正數（美元），或留空"); return; }
   if (c !== "" && !(num(c) > 0 && num(c) <= 100)) { show(msg, "err", "單一股票上限需為 1–100 的百分比，或留空"); return; }
-  const tg = { "0050": $("sT0050").value.trim().replace("%",""), "VOO": $("sTVOO").value.trim().replace("%",""), "選股": $("sTStock").value.trim().replace("%","") };
+  const stockT = $("sTStock").value.trim().replace("%","");
   const thr = $("sThr").value.trim().replace("%","");
   const monthly = $("sMonthly").value.trim().replace(/,/g,"").replace(/^NT\$/i,""), rday = $("sDay").value.trim();
-  if (monthly !== "" && !(num(monthly) > 0)) { show(msg, "err", "每月投入需為正數（台幣），或留空"); return; }
-  if (rday !== "" && !(Number.isInteger(num(rday)) && num(rday) >= 1 && num(rday) <= 28)) { show(msg, "err", "提醒日需為 1–28 的整數，或留空"); return; }
-  const extra = {};
+  if (stockT !== "" && !(num(stockT) >= 0 && num(stockT) <= 100)) { show(msg, "err", "個股目標需為 0–100 的數字，或留空"); return; }
+  const etfT = stockT === "" ? "" : String(Math.round((100 - num(stockT)) * 100) / 100);
+  const split = {};
   for (const line of $("sExtra").value.split("\n").map(l => l.trim()).filter(Boolean)){
     const m = line.match(/^([A-Za-z0-9\-]{1,10})\s+([\d.]+)%?$/);
-    if (!m) { show(msg, "err", "「其他持有的 ETF」格式不對：\"" + line + "\"。每行請寫：代號 空格 百分比，例如 00631L 10"); return; }
+    if (!m) { show(msg, "err", "ETF 內部比例格式不對：\"" + line + "\"。每行請寫：代號 空格 百分比，例如 0050 50"); return; }
     const k = m[1].toUpperCase();
-    if (["0050","VOO","選股"].includes(k) || k in extra) { show(msg, "err", "代號重複：" + k); return; }
-    extra[k] = m[2];
+    if (k in split) { show(msg, "err", "代號重複：" + k); return; }
+    split[k] = m[2];
   }
-  const all = { ...tg, ...extra };
-  const given = Object.values(all).filter(v => v !== "");
-  const sum = Object.values(all).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0);
-  if (given.some(v => !(num(v) >= 0 && num(v) <= 100))) { show(msg, "err", "目標比例需為 0–100 的數字，或留空"); return; }
-  if (given.length && Math.abs(sum - 100) > 0.5) { show(msg, "err", "所有目標比例合計要等於 100（目前 " + sum + "）"); return; }
-  if (thr !== "" && !(num(thr) > 0 && num(thr) <= 50)) { show(msg, "err", "偏離提醒需為 1–50 的百分點，或留空"); return; }
+  const sSum = Object.values(split).reduce((a, v) => a + num(v), 0);
+  if (Object.keys(split).length && Math.abs(sSum - 100) > 0.5) { show(msg, "err", "ETF 內部比例合計要等於 100（目前 " + sSum + "）"); return; }
+  if (Object.keys(split).length && stockT === "") { show(msg, "err", "請先填個股（選股）的目標比例"); return; }
+  if (monthly !== "" && !(num(monthly) > 0)) { show(msg, "err", "每月投入需為正數（台幣），或留空"); return; }
+  if (rday !== "" && !(Number.isInteger(num(rday)) && num(rday) >= 1 && num(rday) <= 28)) { show(msg, "err", "提醒日需為 1–28 的整數，或留空"); return; }
   const btn = $("btnSaveCfg"); btn.disabled = true; show(msg, "info", "儲存中…");
   try {
     for (let attempt = 0; attempt < 2; attempt++){
@@ -754,9 +764,9 @@ async function saveCfg(){
       let rows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
       const set = (k, v) => { let r = rows.find(r => (r[0]||"").trim() === k); if (!r){ r = [k,"",""]; rows.push(r); } while (r.length < 3) r.push(""); r[1] = v; };
       set("選股部位預算", b); set("單一股票上限", c);
-      rows = rows.filter(r => !((r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)) && !(((r[0]||"").trim().slice(5)) in extra)));
-      set("目標比例_0050", tg["0050"]); set("目標比例_VOO", tg["VOO"]); set("目標比例_選股", tg["選股"]);
-      for (const [k, v] of Object.entries(extra)) set("目標比例_" + k, v);
+      rows = rows.filter(r => { const k = (r[0]||"").trim(); return !(k.startsWith("目標比例_") || k.startsWith("ETF內部比例_")); });
+      set("目標比例_ETF", etfT); set("目標比例_選股", stockT);
+      for (const [k, v] of Object.entries(split)) set("ETF內部比例_" + k, v);
       set("配置提醒門檻", thr); set("每月定期定額台幣", monthly); set("定期定額提醒日", rday);
       try { const r = await writeFile(FILES.cfg, toCSV(rows), f.sha, "App：更新部位設定"); cfgSha = r && r.content ? r.content.sha : null; break; }
       catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
@@ -918,6 +928,7 @@ $("actSell").addEventListener("click", () => setAction("賣"));
 $("btnAdd").addEventListener("click", addTrade);
 $("btnSaveConn").addEventListener("click", saveConn);
 $("btnSaveCfg").addEventListener("click", saveCfg);
+$("sTStock").addEventListener("input", () => { const v = num($("sTStock").value.replace("%","")); $("sTEtf").value = isFinite(v) && v >= 0 && v <= 100 ? String(Math.round((100 - v) * 100) / 100) : ""; });
 $("btnRun").addEventListener("click", runMonitor);
 $("btnRepHold").addEventListener("click", () => loadReport("hold", "持股報告"));
 $("btnRepMonth").addEventListener("click", () => loadReport("month", "月度研究清單"));
