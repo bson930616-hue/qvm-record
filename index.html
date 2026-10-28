@@ -521,17 +521,31 @@ function renderSummary(){
   }
   const st = sm.stock;
   if (st){
-    for (const h of st.holdings){
+    const active = st.holdings.filter(x => x.shares > 0), sold = st.holdings.filter(x => !(x.shares > 0));
+    for (const h of active){
       any = true;
-      const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = h.ticker; 
+      const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = h.ticker;
       t.append(l, el("span", "num " + cls(h.return), pct(h.return)));
-      d.append(t, el("div", "s", (h.shares > 0 ? h.shares + " 股　成本 $" + (h.avg_cost ? h.avg_cost.toFixed(2) : "–") + "　現價 $" + h.price.toFixed(2) : "已賣出")),
+      d.append(t, el("div", "s", h.shares + " 股　成本 $" + (h.avg_cost ? h.avg_cost.toFixed(2) : "–") + "　現價 $" + h.price.toFixed(2)),
                el("div", "s", "市值 $" + twd(h.value) + "　損益 $" + twd(h.gain, true) + "　同金額買 SPY：$" + twd(h.spy_gain, true)));
       hb.appendChild(d);
     }
+    if (sold.length){
+      any = true;
+      const det = document.createElement("details"); det.style.marginTop = "8px";
+      const sum = document.createElement("summary"); sum.className = "muted"; sum.textContent = "已賣出的部位（" + sold.length + " 檔，已實現損益）";
+      det.appendChild(sum);
+      for (const h of sold){
+        const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = h.ticker;
+        t.append(l, el("span", "num " + cls(h.return), pct(h.return)));
+        d.append(t, el("div", "s", "已全數賣出　投入 $" + twd(h.invested) + "　賣出所得 $" + twd(h.proceeds) + "　已實現損益 $" + twd(h.gain, true)));
+        det.appendChild(d);
+      }
+      hb.appendChild(det);
+    }
     if (st.total && st.benchmark){
       const diff = st.total.gain - st.benchmark.gain;
-      hb.appendChild(el("div", "msg info", "選股部位累計損益 $" + twd(st.total.gain, true) + "（" + pct(st.total.return) + "），同金額買 SPY 為 $" + twd(st.benchmark.gain, true) + "（" + pct(st.benchmark.return) + "）；" + (diff >= 0 ? "多" : "少") + " $" + twd(Math.abs(diff)) + "。持有時間短時多半是運氣，至少看一到兩年。"));
+      hb.appendChild(el("div", "msg info", "選股部位累計損益 $" + twd(st.total.gain, true) + "（" + pct(st.total.return) + "，含已賣出的部位），同金額買 SPY 為 $" + twd(st.benchmark.gain, true) + "（" + pct(st.benchmark.return) + "）；" + (diff >= 0 ? "多" : "少") + " $" + twd(Math.abs(diff)) + "。持有時間短時多半是運氣，至少看一到兩年。"));
     }
   }
   if (any) $("hCard").classList.remove("hidden");
