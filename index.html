@@ -77,8 +77,8 @@ details summary{min-height:36px;display:flex;align-items:center;cursor:pointer}
 a{color:var(--accent)}
 .kv{display:flex;justify-content:space-between;padding:4px 0}
 .md h3,.md h4,.md h5{margin:14px 0 6px;font-size:15px}
-.md p{margin:6px 0;font-size:14px}
-.md ul{margin:6px 0;padding-left:20px;font-size:14px}
+.md p{margin:6px 0;font-size:13px;line-height:1.55}
+.md ul{margin:6px 0;padding-left:20px;font-size:13px}
 .md code{background:var(--bg);border-radius:4px;padding:0 4px;font-size:13px}
 .tbl{overflow-x:auto;margin:8px -4px;border:1px solid var(--line);border-radius:10px;-webkit-overflow-scrolling:touch}
 .tbl table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
@@ -91,6 +91,14 @@ a{color:var(--accent)}
 .tbl td.neg{color:var(--danger)}.tbl td.pos{color:var(--ok)}
 .tbl td.wrap{white-space:normal;min-width:180px}
 .rephead{margin-top:10px;font-weight:600}
+.cards{display:grid;gap:10px;margin:8px 0}
+.mcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg)}
+.mcard .ttl{font-weight:700;font-size:15px;margin-bottom:6px}
+.mcard .g{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px}
+.mcard .g div{display:flex;justify-content:space-between;gap:8px;font-size:13px;border-top:1px dashed var(--line);padding-top:3px}
+.mcard .g .k{color:var(--muted)}
+.mcard .g .full{grid-column:1/-1;display:block}
+.mcard .pos{color:var(--ok)}.mcard .neg{color:var(--danger)}
 </style>
 </head>
 <body>
@@ -601,6 +609,25 @@ function renderMarkdown(md){
       i += 2; const body = [];
       while (i < lines.length && /^\s*\|/.test(lines[i])){ body.push(splitRow(lines[i])); i++; }
       i--;
+      if (head.length >= 7){
+        const cards = document.createElement("div"); cards.className = "cards";
+        for (const r of body){
+          const c = document.createElement("div"); c.className = "mcard";
+          const t = document.createElement("div"); t.className = "ttl"; inline(t, r[0] ?? ""); c.appendChild(t);
+          const g = document.createElement("div"); g.className = "g";
+          head.forEach((hd, k) => {
+            if (k === 0) return;
+            const v = r[k] ?? "";
+            const d = document.createElement("div"); if (v.length > 16) d.classList.add("full");
+            const kk = document.createElement("span"); kk.className = "k"; kk.textContent = hd + (v.length > 16 ? "：" : "");
+            const vv = document.createElement("span"); inline(vv, v);
+            if (/^\**[+\-−]\d/.test(v)) vv.classList.add(/^\**\+/.test(v) ? "pos" : "neg");
+            d.append(kk, vv); g.appendChild(d);
+          });
+          c.appendChild(g); cards.appendChild(c);
+        }
+        root.appendChild(cards); continue;
+      }
       const wrap = document.createElement("div"); wrap.className = "tbl";
       const tb = document.createElement("table"), thd = document.createElement("thead"), tr0 = document.createElement("tr");
       head.forEach((h, k) => { const th = document.createElement("th"); th.className = align[k] || "l"; inline(th, h); tr0.appendChild(th); });
