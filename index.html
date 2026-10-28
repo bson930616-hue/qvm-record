@@ -211,6 +211,8 @@ a{color:var(--accent)}
       <div><label for="sTVOO">VOO</label><input id="sTVOO" inputmode="decimal" placeholder="40"></div>
       <div><label for="sTStock">選股</label><input id="sTStock" inputmode="decimal" placeholder="20"></div>
     </div>
+    <label for="sExtra">其他持有的 ETF（每行一個：代號 空格 目標%，例如 00631L 10）</label>
+    <textarea id="sExtra" rows="3" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="00631L 10"></textarea>
     <label for="sThr">偏離幾個百分點就提醒</label>
     <input id="sThr" inputmode="decimal" placeholder="5">
     <div id="cfgMsg"></div>
@@ -579,6 +581,8 @@ async function loadCfg(){
     const get = k => { const r = cfgRows.find(r => (r[0]||"").trim() === k); return r ? (r[1]||"").trim() : ""; };
     $("sBudget").value = get("選股部位預算"); $("sCap").value = get("單一股票上限").replace("%","");
     $("sT0050").value = get("目標比例_0050"); $("sTVOO").value = get("目標比例_VOO"); $("sTStock").value = get("目標比例_選股"); $("sThr").value = get("配置提醒門檻");
+    $("sExtra").value = cfgRows.filter(r => (r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)))
+      .map(r => (r[0]||"").trim().slice(5) + " " + (r[1]||"").trim()).join("\n");
   } catch (e){ show($("cfgMsg"), "err", e.message); }
 }
 async function saveCfg(){
@@ -588,9 +592,19 @@ async function saveCfg(){
   if (c !== "" && !(num(c) > 0 && num(c) <= 100)) { show(msg, "err", "單一股票上限需為 1–100 的百分比，或留空"); return; }
   const tg = { "0050": $("sT0050").value.trim().replace("%",""), "VOO": $("sTVOO").value.trim().replace("%",""), "選股": $("sTStock").value.trim().replace("%","") };
   const thr = $("sThr").value.trim().replace("%","");
-  const given = Object.values(tg).filter(v => v !== "");
+  const extra = {};
+  for (const line of $("sExtra").value.split("\n").map(l => l.trim()).filter(Boolean)){
+    const m = line.match(/^([A-Za-z0-9\-]{1,10})\s+([\d.]+)%?$/);
+    if (!m) { show(msg, "err", "「其他持有的 ETF」格式不對：\"" + line + "\"。每行請寫：代號 空格 百分比，例如 00631L 10"); return; }
+    const k = m[1].toUpperCase();
+    if (["0050","VOO","選股"].includes(k) || k in extra) { show(msg, "err", "代號重複：" + k); return; }
+    extra[k] = m[2];
+  }
+  const all = { ...tg, ...extra };
+  const given = Object.values(all).filter(v => v !== "");
+  const sum = Object.values(all).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0);
   if (given.some(v => !(num(v) >= 0 && num(v) <= 100))) { show(msg, "err", "目標比例需為 0–100 的數字，或留空"); return; }
-  if (given.length && Math.abs(Object.values(tg).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0) - 100) > 0.5) { show(msg, "err", "0050、VOO、選股的目標比例合計要等於 100（目前 " + Object.values(tg).reduce((a, v) => a + (v === "" ? 0 : num(v)), 0) + "）"); return; }
+  if (given.length && Math.abs(sum - 100) > 0.5) { show(msg, "err", "所有目標比例合計要等於 100（目前 " + sum + "）"); return; }
   if (thr !== "" && !(num(thr) > 0 && num(thr) <= 50)) { show(msg, "err", "偏離提醒需為 1–50 的百分點，或留空"); return; }
   const btn = $("btnSaveCfg"); btn.disabled = true; show(msg, "info", "儲存中…");
   try {
@@ -599,7 +613,10 @@ async function saveCfg(){
       let rows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
       const set = (k, v) => { let r = rows.find(r => (r[0]||"").trim() === k); if (!r){ r = [k,"",""]; rows.push(r); } while (r.length < 3) r.push(""); r[1] = v; };
       set("選股部位預算", b); set("單一股票上限", c);
-      set("目標比例_0050", tg["0050"]); set("目標比例_VOO", tg["VOO"]); set("目標比例_選股", tg["選股"]); set("配置提醒門檻", thr);
+      rows = rows.filter(r => !((r[0]||"").trim().startsWith("目標比例_") && !["0050","VOO","選股"].includes((r[0]||"").trim().slice(5)) && !(((r[0]||"").trim().slice(5)) in extra)));
+      set("目標比例_0050", tg["0050"]); set("目標比例_VOO", tg["VOO"]); set("目標比例_選股", tg["選股"]);
+      for (const [k, v] of Object.entries(extra)) set("目標比例_" + k, v);
+      set("配置提醒門檻", thr);
       try { const r = await writeFile(FILES.cfg, toCSV(rows), f.sha, "App：更新部位設定"); cfgSha = r && r.content ? r.content.sha : null; break; }
       catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
     }
