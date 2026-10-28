@@ -29,7 +29,7 @@
 html,body{margin:0;background:var(--bg);color:var(--text);
   font:16px/1.5 -apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang TC","Noto Sans TC",sans-serif;
   -webkit-text-size-adjust:100%}
-body{padding:0 16px calc(84px + env(safe-area-inset-bottom)) 16px;max-width:560px;margin:0 auto}
+body{overflow-x:hidden;padding:0 16px calc(84px + env(safe-area-inset-bottom)) 16px;max-width:560px;margin:0 auto}
 header{padding:calc(14px + env(safe-area-inset-top)) 0 8px;display:flex;align-items:baseline;justify-content:space-between}
 h1{font-size:20px;margin:0}
 .sub{color:var(--muted);font-size:13px}
@@ -38,6 +38,9 @@ h1{font-size:20px;margin:0}
 label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 input,select,textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);
   border-radius:10px;padding:11px 12px;min-height:44px}
+input[type="date"]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;max-width:100%;height:46px;line-height:normal;text-align:left;overflow:hidden}
+input[type="date"]::-webkit-date-and-time-value{text-align:left;min-height:1.5em;margin:0}
+input[type="date"]::-webkit-calendar-picker-indicator{margin:0}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:0}
 .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
 .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
