@@ -111,6 +111,24 @@ a{color:var(--accent)}
 .hcard .s{font-size:13px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
 .lev{display:inline-block;font-size:11px;font-weight:700;border-radius:5px;padding:0 6px;margin-left:6px;background:var(--warn-bg);color:var(--warn)}
 .plan td:last-child,.plan th:last-child{text-align:right}
+.chart{width:100%;height:auto;display:block;margin-top:6px}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .l1{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round}
+.chart .l2{fill:none;stroke:var(--muted);stroke-width:1.6;stroke-dasharray:4 3}
+.chart text{fill:var(--muted);font-size:9px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap}
+.legend i{display:inline-block;width:14px;height:0;border-top:3px solid var(--accent);vertical-align:middle;margin-right:4px}
+.legend i.d{border-top:2px dashed var(--muted)}
+.seg2{display:flex;gap:6px;margin-top:6px}
+.seg2 button{flex:1;min-height:36px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;font:inherit;font-size:13px}
+.seg2 button.on{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+.srow{margin:10px 0}.srow .top{display:flex;justify-content:space-between;font-size:13px}
+.sbar{position:relative;height:12px;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin-top:3px}
+.sbar>i{display:block;height:100%;background:var(--danger)}
+.sbar>b{position:absolute;top:0;bottom:0;width:1px;background:var(--muted)}
+.srow.ok .sbar>i{background:var(--warn)}
+.small{font-size:12px;color:var(--muted)}
+.use{min-height:32px;border:1px solid var(--accent);background:none;color:var(--accent);border-radius:8px;padding:2px 10px;font:inherit;font-size:13px;margin-left:8px}
 .cards{display:grid;gap:10px;margin:8px 0}
 .mcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg)}
 .mcard .ttl{font-weight:700;font-size:15px;margin-bottom:6px}
@@ -178,9 +196,23 @@ a{color:var(--accent)}
     <h2>本月定期定額建議</h2>
     <div id="dcaBox"></div>
   </div>
+  <div class="card hidden" id="chartCard">
+    <h2>資產走勢（台幣）</h2>
+    <div class="seg2" id="rangeBtns"><button data-r="90">3 個月</button><button data-r="365">1 年</button><button data-r="0" class="on">全部</button></div>
+    <div id="chartBox"></div>
+  </div>
+  <div class="card hidden" id="riskCard">
+    <h2>風險儀表板：股災時可能跌多少</h2>
+    <div class="muted">用歷史上實際的大跌，套在你目前的配置（含 00631L 的槓桿路徑）。灰線是 20%／30%／40%。</div>
+    <div id="riskBox"></div>
+  </div>
   <div class="card hidden" id="hCard">
     <h2>持股明細</h2>
     <div id="hBox"></div>
+  </div>
+  <div class="card hidden" id="taxCard">
+    <h2>股利與已實現損益（年度，台幣）</h2>
+    <div id="taxBox"></div>
   </div>
   <div class="card">
     <h2>目前持股（依你的紀錄計算）</h2>
@@ -467,7 +499,7 @@ function renderSummary(){
   const sm = state.summary, box = $("ovBox");
   box.textContent = ""; $("dcaCard").classList.add("hidden"); $("hCard").classList.add("hidden"); $("ovWhen").textContent = "";
   const a = sm && sm.allocation;
-  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); return; }
+  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); drawChart(); drawRisk(); drawTax(); return; }
   $("ovWhen").textContent = "（" + a.asof + "）";
   box.appendChild(el("div", "muted", "總資產（台幣，匯率 " + a.fx.toFixed(2) + "）"));
   box.appendChild(el("div", "big num", "NT$ " + twd(a.total_twd)));
@@ -504,7 +536,8 @@ function renderSummary(){
     const b = $("dcaBox"); b.textContent = "";
     b.appendChild(el("div", "muted", "每月投入 NT$ " + twd(a.dca.amount) + "（每月 " + a.dca.day + " 日提醒）。依目前偏離，建議這樣分配："));
     const t = document.createElement("table"); t.className = "plan"; t.innerHTML = "<tr><th>項目</th><th>建議投入（台幣）</th></tr>";
-    for (const p of a.dca.plan){ const tr = document.createElement("tr"); const c1 = document.createElement("td"), c2 = document.createElement("td"); c1.textContent = p.name; c2.textContent = "NT$ " + twd(p.twd); tr.append(c1, c2); t.appendChild(tr); }
+    for (const p of a.dca.plan){ const tr = document.createElement("tr"); const c1 = document.createElement("td"), c2 = document.createElement("td"); c1.textContent = p.name; c2.textContent = "NT$ " + twd(p.twd);
+      const bt = document.createElement("button"); bt.className = "use"; bt.type = "button"; bt.textContent = "帶入記錄"; bt.addEventListener("click", () => useDca(p)); c2.appendChild(bt); tr.append(c1, c2); t.appendChild(tr); }
     b.appendChild(t);
   } else if (a.dca === null){
     $("dcaCard").classList.remove("hidden");
@@ -554,6 +587,79 @@ function renderSummary(){
     }
   }
   if (any) $("hCard").classList.remove("hidden");
+  drawChart(); drawRisk(); drawTax();
+}
+
+
+let chartRange = 0;
+function drawChart(){
+  const sm = state.summary, box = $("chartBox"), card = $("chartCard");
+  box.textContent = ""; card.classList.add("hidden");
+  const hist = sm && sm.allocation && sm.allocation.history; if (!hist || hist.length < 2) return;
+  card.classList.remove("hidden");
+  let rows = hist; if (chartRange > 0){ const cut = new Date(hist[hist.length-1].d); cut.setDate(cut.getDate() - chartRange); rows = hist.filter(r => new Date(r.d) >= cut); if (rows.length < 2) rows = hist.slice(-2); }
+  const W = 320, H = 150, L = 38, R = 8, T = 8, B = 18;
+  const vals = rows.flatMap(r => [r.total, r.net]); let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= 1; } const pad = (hi - lo) * 0.08; lo = Math.max(0, lo - pad); hi += pad;
+  const x = i => L + (W - L - R) * (rows.length === 1 ? 0 : i / (rows.length - 1)), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("class", "chart"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "總資產與累計淨投入走勢");
+  const add = (tag, attrs, text) => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; };
+  for (let k = 0; k <= 3; k++){ const v = lo + (hi - lo) * k / 3, yy = y(v); add("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }); add("text", { x: L - 4, y: yy + 3, "text-anchor": "end" }, v >= 10000 ? Math.round(v / 1000) + "k" : Math.round(v)); }
+  add("text", { x: L, y: H - 4, "text-anchor": "start" }, rows[0].d.slice(2)); add("text", { x: W - R, y: H - 4, "text-anchor": "end" }, rows[rows.length-1].d.slice(2));
+  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(r.net).toFixed(1)).join(" "), class: "l2" });
+  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(r.total).toFixed(1)).join(" "), class: "l1" });
+  box.appendChild(svg);
+  const last = rows[rows.length - 1], gain = last.total - last.net;
+  const lg = el("div", "legend"); const a = el("span"); a.innerHTML = "<i></i>總資產"; const b2 = el("span"); b2.innerHTML = "<i class='d'></i>累計淨投入"; lg.append(a, b2); box.appendChild(lg);
+  box.appendChild(el("div", "small", "目前 NT$ " + twd(last.total) + "　淨投入 NT$ " + twd(last.net) + "　差額 " + (gain >= 0 ? "+" : "") + twd(gain) + "（未含已領股利與匯率以外的細節；每週五一點）"));
+}
+function drawRisk(){
+  const sm = state.summary, box = $("riskBox"), card = $("riskCard");
+  box.textContent = ""; card.classList.add("hidden");
+  const st = sm && sm.allocation && sm.allocation.stress; if (!st || !st.rows || !st.rows.length) return;
+  card.classList.remove("hidden");
+  const tol = 30;
+  for (const r of [...st.rows].sort((p, q) => p.drop_pct - q.drop_pct)){
+    const d = el("div", "srow" + (r.drop_pct <= -tol ? "" : " ok"));
+    const top = el("div", "top"); top.append(el("span", "", r.name), el("span", "num neg", r.drop_pct.toFixed(1) + "%（NT$ " + twd(r.drop_twd) + "）"));
+    const bar = el("div", "sbar"), fill = document.createElement("i"); fill.style.width = Math.min(100, Math.abs(r.drop_pct)) + "%"; bar.appendChild(fill);
+    for (const m of [20, 30, 40]){ const l = document.createElement("b"); l.style.left = m + "%"; bar.appendChild(l); }
+    d.append(top, bar);
+    const bits = [];
+    if (r.lev_share !== null && r.lev_share !== undefined) bits.push("槓桿部位占損失 " + (r.lev_share * 100).toFixed(0) + "%");
+    if (r.months_to_recover) bits.push("市場約 " + Math.round(r.months_to_recover) + " 個月回到高點");
+    if (r.proxy && r.proxy.length) bits.push("部分以美股代理");
+    if (bits.length) d.appendChild(el("div", "small", bits.join("　")));
+    box.appendChild(d);
+  }
+  const worst = Math.min(...st.rows.map(r => r.drop_pct));
+  box.appendChild(el("div", "msg info", "最差情境約 " + worst.toFixed(0) + "%。大跌時不賣、持續投入，是歷史上唯一一致有效的做法；但你得先確認自己撐得住這樣的帳面虧損。個股以 β=1.2 概略，00631L 以每日重設 2 倍模擬。"));
+}
+function drawTax(){
+  const sm = state.summary, box = $("taxBox"), card = $("taxCard");
+  box.textContent = ""; card.classList.add("hidden");
+  const ys = sm && sm.allocation && sm.allocation.yearly; if (!ys || !ys.length) return;
+  card.classList.remove("hidden");
+  for (const y of [...ys].reverse()){
+    const d = el("div", "hcard"), t = el("div", "t"); t.append(el("b", "", y.year + " 年"), el("span", "num", "海外所得約 NT$ " + twd(y.overseas_income_twd, true)));
+    d.append(t,
+      el("div", "s", "美股股利 NT$ " + twd(y.us_dividends_twd) + "　台股股利 NT$ " + twd(y.tw_dividends_twd)),
+      el("div", "s", "美元部位已實現損益 NT$ " + twd(y.us_realized_gain_twd, true) + "　台股已實現損益 NT$ " + twd(y.tw_realized_gain_twd, true)));
+    box.appendChild(d);
+  }
+  box.appendChild(el("div", "msg warn", "這是依你的交易紀錄與 Yahoo 股利資料算的參考值，不是券商對帳單或報稅文件。一般而言：美股股利在美國會先被預扣稅（無租稅協定時 30%），這裡未扣；海外所得（美股股利與賣出獲利）全戶全年合計達 100 萬元時要納入基本稅額計算；台股股利單筆 2 萬元以上要付 2.11% 補充保費。規定會變動，請以國泰證券或會計師的最新說明為準。"));
+}
+function useDca(p){
+  switchTab("add");
+  const core = p.name.startsWith("ETF：") || p.name.startsWith("ETF（");
+  setAcct(core ? "core" : "us"); setAction("買");
+  $("fDate").value = todayLocal(); $("fShares").value = ""; $("fPrice").value = ""; $("fFee").value = "";
+  $("fTicker").value = p.ticker || ""; $("fNote").value = "定期定額 NT$" + twd(p.twd);
+  const fx = state.summary && state.summary.allocation ? state.summary.allocation.fx : null;
+  if (p.price && p.ticker){
+    const px = p.price, perShare = p.currency === "TWD" ? px : (fx ? px * fx : null);
+    if (perShare){ const n = Math.floor(p.twd / perShare); if (n >= 1){ $("fShares").value = String(n); } $("fPrice").value = px.toFixed(2); }
+  }
+  show($("addMsg"), "info", "已帶入建議：請以券商實際成交的股數、價格、手續費為準，確認後按儲存。");
 }
 
 function setBanner(kind, text){ show($("banner"), kind, text); }
@@ -930,6 +1036,7 @@ $("btnSaveConn").addEventListener("click", saveConn);
 $("btnSaveCfg").addEventListener("click", saveCfg);
 $("sTStock").addEventListener("input", () => { const v = num($("sTStock").value.replace("%","")); $("sTEtf").value = isFinite(v) && v >= 0 && v <= 100 ? String(Math.round((100 - v) * 100) / 100) : ""; });
 $("btnRun").addEventListener("click", runMonitor);
+document.querySelectorAll("#rangeBtns button").forEach(b => b.addEventListener("click", () => { chartRange = Number(b.dataset.r); document.querySelectorAll("#rangeBtns button").forEach(x => x.classList.toggle("on", x === b)); drawChart(); }));
 $("btnRepHold").addEventListener("click", () => loadReport("hold", "持股報告"));
 $("btnRepMonth").addEventListener("click", () => loadReport("month", "月度研究清單"));
 $("btnClear").addEventListener("click", () => {
