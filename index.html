@@ -35,6 +35,11 @@ h1{font-size:20px;margin:0}
 .sub{color:var(--muted);font-size:13px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
 .card h2{font-size:16px;margin:0 0 10px}
+.fold>h2{cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin:0;min-height:32px}
+.fold>h2::after{content:"▾";color:var(--muted,#888);transition:transform .15s}
+.fold.closed>h2::after{transform:rotate(-90deg)}
+.fold:not(.closed)>h2{margin-bottom:10px}
+.fold.closed>*:not(h2){display:none!important}
 label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 input,select,textarea{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);
   border-radius:10px;padding:11px 12px;min-height:44px}
@@ -196,30 +201,30 @@ a{color:var(--accent)}
     <h2>本月定期定額建議</h2>
     <div id="dcaBox"></div>
   </div>
-  <div class="card hidden" id="chartCard">
+  <div class="card fold hidden" id="chartCard">
     <h2>資產走勢（台幣）</h2>
     <div class="seg2" id="rangeBtns"><button data-r="90">3 個月</button><button data-r="365">1 年</button><button data-r="0" class="on">全部</button></div>
     <div id="chartBox"></div>
   </div>
-  <div class="card hidden" id="riskCard">
+  <div class="card fold hidden" id="riskCard">
     <h2>風險儀表板：股災時可能跌多少</h2>
     <div class="muted">用歷史上實際的大跌，套在你目前的配置（含 00631L 的槓桿路徑）。灰線是 20%／30%／40%。</div>
     <div id="riskBox"></div>
   </div>
-  <div class="card hidden" id="hCard">
+  <div class="card fold hidden" id="hCard">
     <h2>持股明細</h2>
     <div id="hBox"></div>
   </div>
-  <div class="card hidden" id="taxCard">
+  <div class="card fold hidden" id="taxCard">
     <h2>股利與已實現損益（年度，台幣）</h2>
     <div id="taxBox"></div>
   </div>
-  <div class="card">
+  <div class="card fold">
     <h2>目前持股（依你的紀錄計算）</h2>
     <div id="posBox"></div>
     <div class="muted" style="margin-top:8px">平均成本含手續費。現價與績效請看每週的持股監控報告。</div>
   </div>
-  <div class="card">
+  <div class="card fold">
     <h2>看報告</h2>
     <div class="row">
       <button class="ghost" id="btnRepHold">持股警示與績效</button>
@@ -235,7 +240,7 @@ a{color:var(--accent)}
 
 <!-- 設定 -->
 <section id="tab-set" class="hidden">
-  <div class="card">
+  <div class="card fold">
     <h2>連線</h2>
     <label for="sOwner">GitHub 帳號</label>
     <input id="sOwner" autocapitalize="none" autocorrect="off" spellcheck="false">
@@ -259,7 +264,7 @@ a{color:var(--accent)}
       <div class="muted">金鑰只存在這支手機的瀏覽器裡，不會傳到別處。換手機或過期時，重新產生一組貼上即可。</div>
     </details>
   </div>
-  <div class="card">
+  <div class="card fold">
     <h2>部位設定</h2>
     <div class="muted">會寫進 V10_設定.csv。留空代表不檢查。</div>
     <label for="sBudget">選股部位預算（美元）</label>
@@ -1049,6 +1054,20 @@ $("fDate").value = todayLocal();
 const c0 = conn(); $("sOwner").value = c0.owner; $("sRepo").value = c0.repo; $("sBranch").value = c0.branch;
 refresh();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
+/* ---------- 可收合區塊：預設收起，點標題展開 ---------- */
+(function(){
+  document.querySelectorAll(".card.fold").forEach(function(c){
+    if (!window.__QVM_OPEN_ALL) c.classList.add("closed");
+    const h = c.querySelector("h2");
+    if (!h) return;
+    h.setAttribute("role","button"); h.tabIndex = 0;
+    const tog = function(){ c.classList.toggle("closed"); h.setAttribute("aria-expanded", String(!c.classList.contains("closed"))); };
+    h.addEventListener("click", tog);
+    h.addEventListener("keydown", function(e){ if (e.key==="Enter"||e.key===" "){ e.preventDefault(); tog(); } });
+    h.setAttribute("aria-expanded","false");
+  });
+})();
 </script>
 </body>
 </html>
