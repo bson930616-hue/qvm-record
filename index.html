@@ -599,18 +599,19 @@ function drawChart(){
   card.classList.remove("hidden");
   let rows = hist; if (chartRange > 0){ const cut = new Date(hist[hist.length-1].d); cut.setDate(cut.getDate() - chartRange); rows = hist.filter(r => new Date(r.d) >= cut); if (rows.length < 2) rows = hist.slice(-2); }
   const W = 320, H = 150, L = 38, R = 8, T = 8, B = 18;
-  const vals = rows.flatMap(r => [r.total, r.net]); let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= 1; } const pad = (hi - lo) * 0.08; lo = Math.max(0, lo - pad); hi += pad;
+  const asset = r => r.total + (r.sell || 0), put = r => (r.buy !== undefined ? r.buy : r.net);
+  const vals = rows.flatMap(r => [asset(r), put(r)]); let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= 1; } const pad = (hi - lo) * 0.08; lo = Math.max(0, lo - pad); hi += pad;
   const x = i => L + (W - L - R) * (rows.length === 1 ? 0 : i / (rows.length - 1)), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("class", "chart"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "總資產與累計淨投入走勢");
   const add = (tag, attrs, text) => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; };
   for (let k = 0; k <= 3; k++){ const v = lo + (hi - lo) * k / 3, yy = y(v); add("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }); add("text", { x: L - 4, y: yy + 3, "text-anchor": "end" }, v >= 10000 ? Math.round(v / 1000) + "k" : Math.round(v)); }
   add("text", { x: L, y: H - 4, "text-anchor": "start" }, rows[0].d.slice(2)); add("text", { x: W - R, y: H - 4, "text-anchor": "end" }, rows[rows.length-1].d.slice(2));
-  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(r.net).toFixed(1)).join(" "), class: "l2" });
-  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(r.total).toFixed(1)).join(" "), class: "l1" });
+  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(put(r)).toFixed(1)).join(" "), class: "l2" });
+  add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(asset(r)).toFixed(1)).join(" "), class: "l1" });
   box.appendChild(svg);
-  const last = rows[rows.length - 1], gain = last.total - last.net;
-  const lg = el("div", "legend"); const a = el("span"); a.innerHTML = "<i></i>總資產"; const b2 = el("span"); b2.innerHTML = "<i class='d'></i>累計淨投入"; lg.append(a, b2); box.appendChild(lg);
-  box.appendChild(el("div", "small", "目前 NT$ " + twd(last.total) + "　淨投入 NT$ " + twd(last.net) + "　差額 " + (gain >= 0 ? "+" : "") + twd(gain) + "（未含已領股利與匯率以外的細節；每週五一點）"));
+  const last = rows[rows.length - 1], gain = asset(last) - put(last);
+  const lg = el("div", "legend"); const a = el("span"); a.innerHTML = "<i></i>總資產（含已賣出所得）"; const b2 = el("span"); b2.innerHTML = "<i class='d'></i>累計買進"; lg.append(a, b2); box.appendChild(lg);
+  box.appendChild(el("div", "small", "目前市值 NT$ " + twd(last.total) + "　累計買進 NT$ " + twd(put(last)) + (last.sell ? "　已賣出所得 NT$ " + twd(last.sell) : "") + "　累計損益 " + (gain >= 0 ? "+" : "") + twd(gain) + "（每週五一點；不含股利）"));
 }
 function drawRisk(){
   const sm = state.summary, box = $("riskBox"), card = $("riskCard");
