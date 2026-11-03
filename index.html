@@ -214,6 +214,10 @@ a{color:var(--accent)}
     <h2>資產總覽 <span class="muted" id="ovWhen"></span></h2>
     <div id="ovBox"><div class="muted">讀取中…</div></div>
   </div>
+  <div class="card" id="healthCard">
+    <h2>資料狀態</h2>
+    <div id="healthBox"></div>
+  </div>
   <div class="card hidden" id="dcaCard">
     <h2>本月定期定額建議</h2>
     <div id="dcaBox"></div>
@@ -221,6 +225,10 @@ a{color:var(--accent)}
   <div class="card hidden" id="buyCard">
     <h2>今晚購入清單</h2>
     <div id="buyBox"></div>
+  </div>
+  <div class="card hidden" id="rebCard">
+    <h2>賣出與再平衡建議</h2>
+    <div id="rebBox"></div>
   </div>
   <div class="card fold hidden" id="chartCard">
     <h2>資產走勢（台幣）</h2>
@@ -271,6 +279,8 @@ a{color:var(--accent)}
     <input id="sBranch" autocapitalize="none" autocorrect="off" spellcheck="false">
     <label for="sToken">存取金鑰（token）</label>
     <input id="sToken" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="github_pat_…">
+    <label for="sTokExp">金鑰到期日（選填，到期前 30 天會提醒）</label>
+    <input id="sTokExp" type="date">
     <div id="setMsg"></div>
     <button class="primary" id="btnSaveConn">儲存並測試連線</button>
     <details style="margin-top:10px">
@@ -534,7 +544,7 @@ function renderSummary(){
   const sm = state.summary, box = $("ovBox");
   box.textContent = ""; $("dcaCard").classList.add("hidden"); $("hCard").classList.add("hidden"); $("ovWhen").textContent = "";
   const a = sm && sm.allocation;
-  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); drawBuy(); drawChart(); drawRisk(); drawTax(); return; }
+  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); drawHealth(); drawBuy(); drawReb(); drawChart(); drawRisk(); drawTax(); return; }
   $("ovWhen").textContent = "（" + a.asof + "）";
   box.appendChild(el("div", "muted", "總資產（台幣，匯率 " + a.fx.toFixed(2) + "）"));
   box.appendChild(el("div", "big num", "NT$ " + twd(a.total_twd)));
@@ -627,7 +637,7 @@ function renderSummary(){
     }
   }
   if (any) $("hCard").classList.remove("hidden");
-  drawBuy(); drawChart(); drawRisk(); drawTax();
+  drawHealth(); drawBuy(); drawReb(); drawChart(); drawRisk(); drawTax();
 }
 
 
@@ -685,6 +695,51 @@ function drawBuy(){
     box.appendChild(det);
   }
   box.appendChild(el("div", "small", "依月度優先度（" + (bl.research_asof || "–") + "）與最新股價計算；價格是上一個收盤價，下單前請在券商 App 再確認。研究輔助，不是投資建議。買進後請到「記錄」補記。"));
+}
+function drawReb(){
+  const sm = state.summary, box = $("rebBox"), card = $("rebCard");
+  box.textContent = ""; card.classList.add("hidden");
+  const rb = sm && sm.rebalance; if (!rb) return;
+  card.classList.remove("hidden");
+  if (!rb.items || !rb.items.length){ box.appendChild(el("div", "muted", (rb.notes && rb.notes[0]) || "目前沒有需要調整的項目。")); return; }
+  for (const it of rb.items){
+    const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = it.title;
+    l.appendChild(el("span", "lev", it.severity));
+    t.append(l); d.append(t);
+    for (const ln of it.lines) d.appendChild(el("div", "s", ln));
+    box.appendChild(d);
+  }
+  if (rb.note_disclaimer) box.appendChild(el("div", "small", rb.note_disclaimer));
+}
+function ageDays(iso){ const t = Date.parse(iso); return isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null; }
+function drawHealth(){
+  const sm = state.summary, box = $("healthBox"); box.textContent = "";
+  const rows = [];
+  const add = (level, text) => rows.push([level, text]);
+  if (!sm){ add("warn", "還沒有最新的彙整資料（按「立即更新績效」，約 3 分鐘後回來）。"); }
+  else {
+    const gen = sm.generated_at ? ageDays(sm.generated_at) : null;
+    if (gen === null) add("warn", "持股彙整沒有更新時間紀錄（等下一次持股監控更新後會顯示）。");
+    else if (gen > 14) add("err", "持股彙整已 " + gen + " 天沒更新，排程可能沒在跑。請到 GitHub 的 Actions 看「QVM 持股監控」，或按「立即更新績效」。");
+    else if (gen > 8) add("warn", "持股彙整已 " + gen + " 天沒更新（預期每週一次）。");
+    else add("ok", "持股彙整 " + (gen === 0 ? "今天" : gen + " 天前") + "更新（行情日 " + (sm.generated_for || "–") + "）。");
+    const bl = sm.buylist;
+    if (bl && bl.research_asof){
+      const ra = ageDays(bl.research_asof + "T00:00:00Z");
+      if (ra !== null && ra > 45) add("err", "月度優先度已 " + ra + " 天沒更新，購入清單已停止給建議。");
+      else if (ra !== null && ra > 35) add("warn", "月度優先度已 " + ra + " 天沒更新（超過 45 天會停止給購入建議）。");
+      else if (ra !== null) add("ok", "月度優先度日期 " + bl.research_asof + "（" + ra + " 天前）。");
+    }
+  }
+  const exp = LS.get("qvm_token_exp") || "";
+  if (exp){
+    const left = Math.ceil((Date.parse(exp + "T00:00:00") - Date.now()) / 86400000);
+    if (left < 0) add("err", "存取金鑰已在 " + exp + " 到期，請重新產生並貼到「設定」。");
+    else if (left <= 30) add("warn", "存取金鑰將在 " + left + " 天後（" + exp + "）到期，請先重新產生。");
+    else add("ok", "存取金鑰到期日 " + exp + "（還有 " + left + " 天）。");
+  } else add("muted", "尚未填金鑰到期日（在「設定」填寫後，到期前 30 天會提醒）。");
+  const icon = { ok: "✓ ", warn: "⚠ ", err: "✕ ", muted: "" };
+  for (const [lv, tx] of rows){ const d = el("div", lv === "ok" || lv === "muted" ? "small" : "msg " + (lv === "err" ? "err" : "warn"), icon[lv] + tx); d.style.margin = "4px 0"; box.appendChild(d); }
 }
 function drawRisk(){
   const sm = state.summary, box = $("riskBox"), card = $("riskCard");
@@ -1029,6 +1084,7 @@ async function saveConn(){
   if (!owner || !repo){ show(msg, "err", "請填帳號與儲存庫名稱"); return; }
   if (!token){ show(msg, "err", "請貼上存取金鑰"); return; }
   LS.set("qvm_owner", owner); LS.set("qvm_repo", repo); LS.set("qvm_branch", branch); LS.set("qvm_token", token);
+  if ($("sTokExp").value) LS.set("qvm_token_exp", $("sTokExp").value); else LS.del("qvm_token_exp");
   $("sToken").value = "";
   show(msg, "info", "測試連線中…");
   try {
@@ -1183,7 +1239,7 @@ $("btnClear").addEventListener("click", () => {
   location.reload();
 });
 $("fDate").value = todayLocal();
-const c0 = conn(); $("sOwner").value = c0.owner; $("sRepo").value = c0.repo; $("sBranch").value = c0.branch;
+const c0 = conn(); $("sTokExp").value = LS.get("qvm_token_exp") || ""; $("sOwner").value = c0.owner; $("sRepo").value = c0.repo; $("sBranch").value = c0.branch;
 refresh();
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
