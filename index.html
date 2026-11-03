@@ -179,6 +179,15 @@ a{color:var(--accent)}
       <div><label for="fFee" id="lblFee">手續費（美元）</label><input id="fFee" inputmode="decimal" placeholder="0"></div>
       <div><label for="fNote">備註（可空白）</label><input id="fNote" placeholder="例如 第一次買進"></div>
     </div>
+    <details style="margin-top:8px" id="jDet">
+      <summary class="muted">決策日誌（建議填：為什麼買、什麼情況下賣）</summary>
+      <label for="fReason">買進理由（一兩句話）</label>
+      <textarea id="fReason" rows="2" placeholder="例如 FCF 夠、疑慮是暫時的、保守邊際約 18%"></textarea>
+      <label for="fExit">賣出或重新檢討的條件</label>
+      <textarea id="fExit" rows="2" placeholder="例如 2027 現金稅後 FCF 低於 150 億就檢討"></textarea>
+      <label for="fReview">複查日（空白＝90 天後）</label>
+      <input id="fReview" type="date">
+    </details>
     <div id="addMsg"></div>
     <button class="primary" id="btnAdd">儲存這筆交易</button>
     <div class="muted" style="margin-top:8px" id="addHint">儲存後會直接寫進 GitHub 的 V10_交易紀錄.csv。</div>
@@ -191,6 +200,11 @@ a{color:var(--accent)}
     <h2>全部交易 <span class="muted" id="listCount"></span></h2>
     <div id="listMsg"></div>
     <div id="tradeList"></div>
+  </div>
+  <div class="card fold" id="jCard">
+    <h2>決策日誌 <span class="muted" id="jCount"></span></h2>
+    <div id="jMsg"></div>
+    <div id="jList"></div>
   </div>
 </section>
 
@@ -279,6 +293,11 @@ a{color:var(--accent)}
     <input id="sBudget" inputmode="decimal" placeholder="例如 1000">
     <label for="sCap">單一股票上限（%）</label>
     <input id="sCap" inputmode="decimal" placeholder="例如 25">
+    <div class="row">
+      <div><label for="sFeeRate">美股手續費率（%）</label><input id="sFeeRate" inputmode="decimal" placeholder="0.08"></div>
+      <div><label for="sFeeMin">最低手續費（美元）</label><input id="sFeeMin" inputmode="decimal" placeholder="0"></div>
+    </div>
+    <div class="muted">用來估算「今晚購入清單」的手續費；請依你在國泰的實際費率填（我查到 2026 年美股個股網路下單約 0.08%、無低消，以官網為準）。</div>
     <h3 class="grp">整體資產配置目標</h3>
     <div class="muted">單位 %。ETF（含 0050、VOO、00631L 等所有在「大盤」帳戶的 ETF）與個股（選股）兩大類，合計 100；留空代表不追蹤</div>
     <div class="row">
@@ -319,7 +338,8 @@ const LS = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
-const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv" };
+const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv", journal: "V10_決策日誌.csv" };
+const JHEAD = ["日期","代號","動作","理由","賣出條件","複查日","狀態","複查結果"];
 const HEADER = ["日期","代號","動作","股數","價格","手續費","備註"];
 const DEFAULT = { owner: "bson930616-hue", repo: "-qvm-v10-research", branch: "main" };
 
@@ -431,7 +451,7 @@ async function readFile(file){
     // 大於 1MB 時 content 為空；交易紀錄不會這麼大
     return { text: b64decode(b.content||""), sha: b.sha };
   } catch (e){
-    if (e.status === 404 && (file === FILES.cfg || file === FILES.core)) return { text: "", sha: null, missing: true };
+    if (e.status === 404 && (file === FILES.cfg || file === FILES.core || file === FILES.journal)) return { text: "", sha: null, missing: true };
     throw e;
   }
 }
@@ -644,8 +664,9 @@ function drawBuy(){
     for (const it of bl.items){
       const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = it.ticker;
       t.append(l, el("span", "num pos", "買 " + it.shares + " 股"));
-      d.append(t, el("div", "s", "參考價 $" + it.price.toFixed(2) + "　限價 ≤ $" + it.limit.toFixed(2) + "　約 $" + twd(it.cost)),
+      d.append(t, el("div", "s", "參考價 $" + it.price.toFixed(2) + (it.price_date ? "（" + it.price_date.slice(5) + " 收盤）" : "") + "　限價 ≤ $" + it.limit.toFixed(2) + "　約 $" + twd(it.cost)),
                el("div", "s", (it.mos_used !== null && it.mos_used !== undefined ? "查證後邊際約 " + Math.round(it.mos_used * 100) + "%　" : "") + it.note));
+      if (it.fee !== undefined) d.appendChild(el("div", "small", "估計手續費 $" + it.fee.toFixed(2) + "（約占 " + (it.fee_pct * 100).toFixed(2) + "%，費率可在「設定」修改）"));
       if (it.question) d.appendChild(el("div", "small", "下單前先答：" + it.question));
       box.appendChild(d);
     }
@@ -735,6 +756,7 @@ async function refresh(){
   render();
   loadCfg();
   loadSummary();
+  loadJournal();
 }
 
 function render(){
@@ -850,8 +872,14 @@ async function addTrade(){
   const btn = $("btnAdd"); btn.disabled = true; show(msg, "info", "儲存中…");
   try {
     await mutateTrades(acct, ts => [...ts, t], "App：" + (acct === "core" ? "大盤 " : "") + t.action + " " + t.ticker + " " + t.shares + " 股 (" + t.date + ")");
-    show(msg, "ok", "已儲存：" + t.action + " " + t.ticker + " " + t.shares + " 股 @ $" + t.price);
-    ["fTicker","fShares","fPrice","fFee","fNote"].forEach(id => $(id).value = "");
+    let jnote = "";
+    const reason = $("fReason").value.trim(), exitc = $("fExit").value.trim();
+    if (reason || exitc){
+      try { await appendJournal({ 日期: t.date, 代號: t.ticker, 動作: t.action, 理由: reason, 賣出條件: exitc, 複查日: $("fReview").value || addDays(t.date, 90), 狀態: "待複查", 複查結果: "" }); jnote = "，決策日誌已記下"; }
+      catch (je){ jnote = "（交易已存，但決策日誌沒寫成功：" + je.message + "）"; }
+    }
+    show(msg, "ok", "已儲存：" + t.action + " " + t.ticker + " " + t.shares + " 股 @ $" + t.price + jnote);
+    ["fTicker","fShares","fPrice","fFee","fNote","fReason","fExit","fReview"].forEach(id => $(id).value = "");
     render();
   } catch (e){ show(msg, "err", e.message); }
   btn.disabled = false;
@@ -871,6 +899,59 @@ async function removeTrade(acct, i){
   } catch (e){ show(msg, "err", e.message); }
 }
 
+/* ---------- 決策日誌 ---------- */
+function addDays(iso, n){ const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); const p = x => String(x).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
+const jRow = o => JHEAD.map(k => o[k] || "");
+async function mutateJournal(mutator, message){
+  for (let attempt = 0; attempt < 2; attempt++){
+    const f = await readFile(FILES.journal);
+    let rows = f.missing || !f.text.trim() ? [JHEAD.slice()] : parseCSV(f.text);
+    const head = rows[0].map(x => x.trim());
+    const objs = rows.slice(1).filter(r => r.some(x => String(x).trim() !== "")).map(r => Object.fromEntries(JHEAD.map(k => [k, (r[head.indexOf(k)] || "").trim()])));
+    const next = mutator(objs);
+    try { await writeFile(FILES.journal, toCSV([JHEAD, ...next.map(jRow)]), f.sha, message); state.journal = next; return; }
+    catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
+  }
+}
+function appendJournal(o){ return mutateJournal(list => [...list, o], "App：決策日誌 " + o.代號 + " " + o.日期); }
+async function loadJournal(){
+  if (!conn().token) return;
+  try {
+    const f = await readFile(FILES.journal);
+    if (f.missing || !f.text.trim()){ state.journal = []; }
+    else { const rows = parseCSV(f.text), head = rows[0].map(x => x.trim()); state.journal = rows.slice(1).filter(r => r.some(x => String(x).trim() !== "")).map(r => Object.fromEntries(JHEAD.map(k => [k, (r[head.indexOf(k)] || "").trim()]))); }
+  } catch (e){ state.journal = []; }
+  renderJournal();
+}
+function renderJournal(){
+  const box = $("jList"); if (!box) return; box.textContent = "";
+  const list = state.journal || [], today = new Date().toISOString().slice(0, 10);
+  const dueN = list.filter(j => j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today).length;
+  $("jCount").textContent = list.length ? "（共 " + list.length + " 筆" + (dueN ? "，" + dueN + " 筆該複查" : "") + "）" : "";
+  if (dueN) $("jCard").classList.remove("closed");
+  if (!list.length){ box.appendChild(el("div", "muted", "還沒有紀錄。在「記錄」頁新增交易時展開「決策日誌」填寫理由與賣出條件，到複查日就會提醒你回頭檢查。")); return; }
+  [...list].sort((a, b) => (b.日期 || "").localeCompare(a.日期 || "")).forEach(j => {
+    const due = j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today;
+    const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = j.代號 + " " + j.動作;
+    if (due) l.appendChild(el("span", "lev", "該複查了"));
+    t.append(l, el("span", "muted", j.日期));
+    d.append(t);
+    if (j.理由) d.appendChild(el("div", "s", "理由：" + j.理由));
+    if (j.賣出條件) d.appendChild(el("div", "s", "賣出／檢討條件：" + j.賣出條件));
+    d.appendChild(el("div", "small", (j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : "複查日 " + (j.複查日 || "–"))));
+    if (j.狀態 !== "已複查"){
+      const b = el("button", "ghost", "標記已複查"); b.style.marginTop = "6px";
+      b.addEventListener("click", async () => {
+        const res = prompt("複查結論（理由還成立嗎？賣出條件觸發了嗎？）", ""); if (res === null) return;
+        try { await mutateJournal(ls => ls.map(x => (x.日期 === j.日期 && x.代號 === j.代號 && x.動作 === j.動作 && x.理由 === j.理由) ? { ...x, 狀態: "已複查", 複查結果: res.trim() } : x), "App：複查 " + j.代號 + " " + j.日期); renderJournal(); }
+        catch (e){ show($("jMsg"), "err", e.message); }
+      });
+      d.appendChild(b);
+    }
+    box.appendChild(d);
+  });
+}
+
 /* ---------- 設定檔 ---------- */
 let cfgSha = null, cfgRows = null;
 async function loadCfg(){
@@ -881,6 +962,7 @@ async function loadCfg(){
     cfgRows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","25","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
     const get = k => { const r = cfgRows.find(r => (r[0]||"").trim() === k); return r ? (r[1]||"").trim() : ""; };
     $("sBudget").value = get("選股部位預算"); $("sCap").value = get("單一股票上限").replace("%","");
+    $("sFeeRate").value = get("美股手續費率"); $("sFeeMin").value = get("美股最低手續費");
     const tgt = {}; for (const r of cfgRows) { const k = (r[0]||"").trim(); if (k.startsWith("目標比例_")) tgt[k.slice(5)] = (r[1]||"").trim(); }
     const split = {}; for (const r of cfgRows) { const k = (r[0]||"").trim(); if (k.startsWith("ETF內部比例_")) split[k.slice(8)] = (r[1]||"").trim(); }
     let stockT = tgt["選股"] ?? "", etfT = tgt["ETF"];
@@ -898,6 +980,9 @@ async function saveCfg(){
   const b = $("sBudget").value.trim().replace(/,/g,""), c = $("sCap").value.trim().replace("%","");
   if (b !== "" && !(num(b) > 0)) { show(msg, "err", "預算需為正數（美元），或留空"); return; }
   if (c !== "" && !(num(c) > 0 && num(c) <= 100)) { show(msg, "err", "單一股票上限需為 1–100 的百分比，或留空"); return; }
+  const feeR = $("sFeeRate").value.trim().replace("%",""), feeM = $("sFeeMin").value.trim().replace(/,/g,"");
+  if (feeR !== "" && !(num(feeR) >= 0 && num(feeR) <= 5)) { show(msg, "err", "手續費率需為 0–5 的百分比，或留空"); return; }
+  if (feeM !== "" && !(num(feeM) >= 0)) { show(msg, "err", "最低手續費需為 0 以上的美元金額，或留空"); return; }
   const stockT = $("sTStock").value.trim().replace("%","");
   const thr = $("sThr").value.trim().replace("%","");
   const monthly = $("sMonthly").value.trim().replace(/,/g,"").replace(/^NT\$/i,""), rday = $("sDay").value.trim();
@@ -922,7 +1007,7 @@ async function saveCfg(){
       const f = await readFile(FILES.cfg);
       let rows = f.missing ? [["項目","數值","說明"],["選股部位預算","","選股部位打算投入的總金額（美元）；留空則不檢查也不試算股數"],["單一股票上限","","單一股票最多佔選股部位的百分比"]] : parseCSV(f.text);
       const set = (k, v) => { let r = rows.find(r => (r[0]||"").trim() === k); if (!r){ r = [k,"",""]; rows.push(r); } while (r.length < 3) r.push(""); r[1] = v; };
-      set("選股部位預算", b); set("單一股票上限", c);
+      set("選股部位預算", b); set("單一股票上限", c); set("美股手續費率", feeR); set("美股最低手續費", feeM);
       rows = rows.filter(r => { const k = (r[0]||"").trim(); return !(k.startsWith("目標比例_") || k.startsWith("ETF內部比例_")); });
       set("目標比例_ETF", etfT); set("目標比例_選股", stockT);
       for (const [k, v] of Object.entries(split)) set("ETF內部比例_" + k, v);
