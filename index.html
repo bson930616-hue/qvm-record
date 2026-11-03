@@ -565,9 +565,14 @@ function renderSummary(){
   const st = sm.stock;
   if (st){
     const active = st.holdings.filter(x => x.shares > 0), sold = st.holdings.filter(x => !(x.shares > 0));
+    const stockTotal = active.reduce((q, x) => q + (x.value || 0), 0);
+    const capCfg = ((cfgRows || []).find(r => r[0] === "單一股票上限") || [])[1]; const cap = parseFloat(String(capCfg || "").replace("%","")) || 25;
+    if (stockTotal > 0) hb.appendChild(el("div", "muted", "個股占比＝該檔市值 ÷ 個股部位市值（$" + twd(stockTotal) + "）；上限 " + cap + "%"));
     for (const h of active){
       any = true;
       const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = h.ticker;
+      const share = stockTotal > 0 ? (h.value || 0) / stockTotal * 100 : null;
+      if (share !== null){ const over = share > cap; const bd = el("span", "lev", "占個股 " + share.toFixed(0) + "%" + (over ? "（超過上限）" : "")); if (!over) bd.style.cssText = "background:var(--card);color:var(--muted);border:1px solid var(--line)"; l.appendChild(bd); }
       t.append(l, el("span", "num " + cls(h.return), pct(h.return)));
       d.append(t, el("div", "s", h.shares + " 股　成本 $" + (h.avg_cost ? h.avg_cost.toFixed(2) : "–") + "　現價 $" + h.price.toFixed(2)),
                el("div", "s", "市值 $" + twd(h.value) + "　損益 $" + twd(h.gain, true) + "　同金額買 SPY：$" + twd(h.spy_gain, true)));
