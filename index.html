@@ -16,13 +16,13 @@
 :root{
   --bg:#f5f6f7; --card:#ffffff; --text:#14181b; --muted:#5b6670; --line:#dde2e6;
   --accent:#0f766e; --accent-text:#ffffff; --danger:#b42318; --danger-bg:#fdecea;
-  --ok:#067647; --ok-bg:#e8f6ee; --warn-bg:#fff4db; --warn:#8a5a00;
+  --ok:#067647; --ok-bg:#e8f6ee; --warn-bg:#fff4db; --warn:#8a5a00; --on-ok:#fff; --on-danger:#fff;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#0e1214; --card:#171d21; --text:#e8edf0; --muted:#98a3ac; --line:#2a343a;
     --accent:#2dd4bf; --accent-text:#06231f; --danger:#ff8a80; --danger-bg:#3a1b19;
-    --ok:#6ee7a8; --ok-bg:#12301f; --warn-bg:#352a0f; --warn:#f6c453;
+    --ok:#6ee7a8; --ok-bg:#12301f; --warn-bg:#352a0f; --warn:#f6c453; --on-ok:#06231f; --on-danger:#3a0a07;
   }
 }
 *{box-sizing:border-box}
@@ -35,7 +35,7 @@ h1{font-size:20px;margin:0}
 .sub{color:var(--muted);font-size:13px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:12px 0}
 .card h2{font-size:16px;margin:0 0 10px}
-.fold>h2{cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin:0;min-height:32px}
+.fold>h2{cursor:pointer;display:flex;align-items:center;justify-content:space-between;margin:0;min-height:44px}
 .fold>h2::after{content:"▾";color:var(--muted,#888);transition:transform .15s}
 .fold.closed>h2::after{transform:rotate(-90deg)}
 .fold:not(.closed)>h2{margin-bottom:10px}
@@ -50,15 +50,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
 .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .seg button{flex:1;border:0;background:var(--bg);color:var(--text);padding:11px;font:inherit;min-height:44px}
-.seg button.on.buy{background:var(--ok);color:#fff}
-.seg button.on.sell{background:var(--danger);color:#fff}
+.seg button.on.buy{background:var(--ok);color:var(--on-ok)}
+.seg button.on.sell{background:var(--danger);color:var(--on-danger)}
 button.primary{width:100%;margin-top:14px;min-height:48px;border:0;border-radius:12px;background:var(--accent);
   color:var(--accent-text);font:inherit;font-weight:600}
 button.primary:disabled{opacity:.5}
 button.ghost{min-height:44px;border:1px solid var(--line);background:var(--card);color:var(--text);
   border-radius:10px;padding:8px 14px;font:inherit}
 button.danger{color:var(--danger);border-color:var(--danger)}
-button.link{border:0;background:none;color:var(--accent);padding:6px 0;font:inherit;min-height:36px}
+button.link{border:0;background:none;color:var(--accent);padding:6px 0;font:inherit;min-height:44px}
 .msg{border-radius:10px;padding:10px 12px;margin:10px 0;font-size:14px;white-space:pre-wrap}
 .msg.err{background:var(--danger-bg);color:var(--danger)}
 .msg.ok{background:var(--ok-bg);color:var(--ok)}
@@ -81,7 +81,7 @@ nav button{flex:1;border:0;background:none;color:var(--muted);font:inherit;font-
 nav button.on{color:var(--accent);font-weight:600}
 nav button span{display:block;font-size:20px;line-height:1.1}
 .hidden{display:none!important}
-details summary{min-height:36px;display:flex;align-items:center;cursor:pointer}
+details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 a{color:var(--accent)}
 .kv{display:flex;justify-content:space-between;padding:4px 0}
 .md h3,.md h4,.md h5{margin:14px 0 6px;font-size:15px}
@@ -114,18 +114,18 @@ a{color:var(--accent)}
 .hcard .t{display:flex;justify-content:space-between;align-items:baseline}
 .hcard .t b{font-size:16px}
 .hcard .s{font-size:13px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
-.lev{display:inline-block;font-size:11px;font-weight:700;border-radius:5px;padding:0 6px;margin-left:6px;background:var(--warn-bg);color:var(--warn)}
+.lev{display:inline-block;font-size:12px;font-weight:700;border-radius:5px;padding:0 6px;margin-left:6px;background:var(--warn-bg);color:var(--warn)}
 .plan td:last-child,.plan th:last-child{text-align:right}
 .chart{width:100%;height:auto;display:block;margin-top:6px}
 .chart .grid{stroke:var(--line);stroke-width:1}
 .chart .l1{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round}
 .chart .l2{fill:none;stroke:var(--muted);stroke-width:1.6;stroke-dasharray:4 3}
-.chart text{fill:var(--muted);font-size:9px}
+.chart text{fill:var(--muted);font-size:11px}
 .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap}
 .legend i{display:inline-block;width:14px;height:0;border-top:3px solid var(--accent);vertical-align:middle;margin-right:4px}
 .legend i.d{border-top:2px dashed var(--muted)}
 .seg2{display:flex;gap:6px;margin-top:6px}
-.seg2 button{flex:1;min-height:36px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;font:inherit;font-size:13px}
+.seg2 button{flex:1;min-height:44px;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:8px;font:inherit;font-size:13px}
 .seg2 button.on{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
 .srow{margin:10px 0}.srow .top{display:flex;justify-content:space-between;font-size:13px}
 .sbar{position:relative;height:12px;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden;margin-top:3px}
@@ -142,6 +142,9 @@ a{color:var(--accent)}
 .mcard .g .k{color:var(--muted)}
 .mcard .g .full{grid-column:1/-1;display:block}
 .mcard .pos{color:var(--ok)}.mcard .neg{color:var(--danger)}
+.muted a{display:inline-flex;align-items:center;min-height:44px;padding:0 8px}
+.grp{font-size:14px;font-weight:700;margin:20px 0 4px;padding-top:14px;border-top:1px solid var(--line)}
+.grp:first-of-type{border-top:0;padding-top:0;margin-top:8px}
 </style>
 </head>
 <body>
@@ -267,11 +270,13 @@ a{color:var(--accent)}
   <div class="card fold">
     <h2>部位設定</h2>
     <div class="muted">會寫進 V10_設定.csv。留空代表不檢查。</div>
+    <h3 class="grp">選股部位</h3>
     <label for="sBudget">選股部位預算（美元）</label>
     <input id="sBudget" inputmode="decimal" placeholder="例如 1000">
     <label for="sCap">單一股票上限（%）</label>
     <input id="sCap" inputmode="decimal" placeholder="例如 25">
-    <div class="muted" style="margin-top:14px"><b>整體資產配置目標（%）</b>：ETF（含 0050、VOO、00631L 等所有在「大盤」帳戶的 ETF）與個股（選股）兩大類，合計 100；留空代表不追蹤</div>
+    <h3 class="grp">整體資產配置目標</h3>
+    <div class="muted">單位 %。ETF（含 0050、VOO、00631L 等所有在「大盤」帳戶的 ETF）與個股（選股）兩大類，合計 100；留空代表不追蹤</div>
     <div class="row">
       <div><label for="sTStock">個股（選股）</label><input id="sTStock" inputmode="decimal" placeholder="50"></div>
       <div><label for="sTEtf">ETF 合計</label><input id="sTEtf" inputmode="decimal" placeholder="50" readonly></div>
@@ -280,7 +285,8 @@ a{color:var(--accent)}
     <textarea id="sExtra" rows="3" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="0050 50&#10;VOO 50"></textarea>
     <label for="sThr">偏離幾個百分點就提醒</label>
     <input id="sThr" inputmode="decimal" placeholder="5">
-    <div class="muted" style="margin-top:14px"><b>每月定期定額提醒</b>：填了金額，系統會在提醒日寄 email 告訴你這個月該投多少、投哪裡（補低配的項目）；留空則不提醒</div>
+    <h3 class="grp">每月定期定額提醒</h3>
+    <div class="muted">填了金額，系統會在提醒日寄 email 告訴你這個月該投多少、投哪裡（補低配的項目）；留空則不提醒</div>
     <div class="row">
       <div><label for="sMonthly">每月投入（台幣）</label><input id="sMonthly" inputmode="decimal" placeholder="30000"></div>
       <div><label for="sDay">每月幾號提醒（1–28）</label><input id="sDay" inputmode="numeric" placeholder="5"></div>
