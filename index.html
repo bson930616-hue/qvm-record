@@ -204,6 +204,10 @@ a{color:var(--accent)}
     <h2>本月定期定額建議</h2>
     <div id="dcaBox"></div>
   </div>
+  <div class="card hidden" id="buyCard">
+    <h2>今晚購入清單</h2>
+    <div id="buyBox"></div>
+  </div>
   <div class="card fold hidden" id="chartCard">
     <h2>資產走勢（台幣）</h2>
     <div class="seg2" id="rangeBtns"><button data-r="90">3 個月</button><button data-r="365">1 年</button><button data-r="0" class="on">全部</button></div>
@@ -510,7 +514,7 @@ function renderSummary(){
   const sm = state.summary, box = $("ovBox");
   box.textContent = ""; $("dcaCard").classList.add("hidden"); $("hCard").classList.add("hidden"); $("ovWhen").textContent = "";
   const a = sm && sm.allocation;
-  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); drawChart(); drawRisk(); drawTax(); return; }
+  if (!a){ box.appendChild(el("div", "muted", "還沒有最新的彙整資料。按下面的「立即更新績效」，等約 3 分鐘後回到這頁。")); drawBuy(); drawChart(); drawRisk(); drawTax(); return; }
   $("ovWhen").textContent = "（" + a.asof + "）";
   box.appendChild(el("div", "muted", "總資產（台幣，匯率 " + a.fx.toFixed(2) + "）"));
   box.appendChild(el("div", "big num", "NT$ " + twd(a.total_twd)));
@@ -603,7 +607,7 @@ function renderSummary(){
     }
   }
   if (any) $("hCard").classList.remove("hidden");
-  drawChart(); drawRisk(); drawTax();
+  drawBuy(); drawChart(); drawRisk(); drawTax();
 }
 
 
@@ -617,10 +621,12 @@ function drawChart(){
   const W = 320, H = 150, L = 38, R = 8, T = 8, B = 18;
   const asset = r => r.total + (r.sell || 0), put = r => (r.buy !== undefined ? r.buy : r.net);
   const vals = rows.flatMap(r => [asset(r), put(r)]); let lo = Math.min(...vals), hi = Math.max(...vals); if (hi === lo) { hi += 1; lo -= 1; } const pad = (hi - lo) * 0.08; lo = Math.max(0, lo - pad); hi += pad;
+  const stepN = (() => { const raw = (hi - lo) / 3, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag; })();
+  lo = Math.floor(lo / stepN) * stepN; hi = Math.ceil(hi / stepN) * stepN;
   const x = i => L + (W - L - R) * (rows.length === 1 ? 0 : i / (rows.length - 1)), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("class", "chart"); svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "總資產與累計淨投入走勢");
   const add = (tag, attrs, text) => { const e = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; };
-  for (let k = 0; k <= 3; k++){ const v = lo + (hi - lo) * k / 3, yy = y(v); add("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }); add("text", { x: L - 4, y: yy + 3, "text-anchor": "end" }, v >= 10000 ? Math.round(v / 1000) + "k" : Math.round(v)); }
+  for (let v = lo; v <= hi + 1e-9; v += stepN){ const yy = y(v); add("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }); add("text", { x: L - 4, y: yy + 3, "text-anchor": "end" }, v >= 10000 ? Math.round(v / 1000) + "k" : Math.round(v)); }
   add("text", { x: L, y: H - 4, "text-anchor": "start" }, rows[0].d.slice(2)); add("text", { x: W - R, y: H - 4, "text-anchor": "end" }, rows[rows.length-1].d.slice(2));
   add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(put(r)).toFixed(1)).join(" "), class: "l2" });
   add("polyline", { points: rows.map((r, i) => x(i).toFixed(1) + "," + y(asset(r)).toFixed(1)).join(" "), class: "l1" });
@@ -628,6 +634,36 @@ function drawChart(){
   const last = rows[rows.length - 1], gain = asset(last) - put(last);
   const lg = el("div", "legend"); const a = el("span"); a.innerHTML = "<i></i>總資產（含已賣出所得）"; const b2 = el("span"); b2.innerHTML = "<i class='d'></i>累計買進"; lg.append(a, b2); box.appendChild(lg);
   box.appendChild(el("div", "small", "目前市值 NT$ " + twd(last.total) + "　累計買進 NT$ " + twd(put(last)) + (last.sell ? "　已賣出所得 NT$ " + twd(last.sell) : "") + "　累計損益 " + (gain >= 0 ? "+" : "") + twd(gain) + "（每週五一點；不含股利）"));
+}
+function drawBuy(){
+  const sm = state.summary, box = $("buyBox"), card = $("buyCard");
+  box.textContent = ""; card.classList.add("hidden");
+  const bl = sm && sm.buylist; if (!bl) return;
+  card.classList.remove("hidden");
+  if (bl.items && bl.items.length){
+    for (const it of bl.items){
+      const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = it.ticker;
+      t.append(l, el("span", "num pos", "買 " + it.shares + " 股"));
+      d.append(t, el("div", "s", "參考價 $" + it.price.toFixed(2) + "　限價 ≤ $" + it.limit.toFixed(2) + "　約 $" + twd(it.cost)),
+               el("div", "s", (it.mos_used !== null && it.mos_used !== undefined ? "查證後邊際約 " + Math.round(it.mos_used * 100) + "%　" : "") + it.note));
+      if (it.question) d.appendChild(el("div", "small", "下單前先答：" + it.question));
+      box.appendChild(d);
+    }
+    const meta = [];
+    if (bl.sleeve_value !== null && bl.sleeve_value !== undefined) meta.push("個股部位市值 $" + twd(bl.sleeve_value) + "／預算 $" + twd(bl.budget));
+    if (bl.left !== undefined) meta.push("買完預算剩約 $" + twd(bl.left));
+    if (meta.length) box.appendChild(el("div", "muted", meta.join("　")));
+  } else {
+    box.appendChild(el("div", "muted", (bl.notes && bl.notes.length ? bl.notes.join(" ") : "今天沒有達標的新買進候選。")));
+  }
+  if (bl.skipped && bl.skipped.length){
+    const det = document.createElement("details"); det.style.marginTop = "6px";
+    const sum = document.createElement("summary"); sum.className = "muted"; sum.textContent = "今天不買的（" + bl.skipped.length + " 檔）";
+    det.appendChild(sum);
+    for (const k of bl.skipped) det.appendChild(el("div", "small", k.ticker + "（" + k.tier + "）：" + k.why));
+    box.appendChild(det);
+  }
+  box.appendChild(el("div", "small", "依月度優先度（" + (bl.research_asof || "–") + "）與最新股價計算；價格是上一個收盤價，下單前請在券商 App 再確認。研究輔助，不是投資建議。買進後請到「記錄」補記。"));
 }
 function drawRisk(){
   const sm = state.summary, box = $("riskBox"), card = $("riskCard");
@@ -649,7 +685,7 @@ function drawRisk(){
     box.appendChild(d);
   }
   const worst = Math.min(...st.rows.map(r => r.drop_pct));
-  box.appendChild(el("div", "msg info", "最差情境約 " + worst.toFixed(0) + "%。大跌時不賣、持續投入，是歷史上唯一一致有效的做法；但你得先確認自己撐得住這樣的帳面虧損。個股以 β=1.2 概略，00631L 以每日重設 2 倍模擬。"));
+  box.appendChild(el("div", "msg info", "最差情境約 " + worst.toFixed(0) + "%。大跌時不賣、持續投入最有效，但要先確認你撐得住這樣的帳面虧損。（個股以 β=1.2 概估，00631L 以每日重設 2 倍模擬）"));
 }
 function drawTax(){
   const sm = state.summary, box = $("taxBox"), card = $("taxCard");
