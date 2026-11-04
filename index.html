@@ -64,9 +64,15 @@ button.link{border:0;background:none;color:var(--accent);padding:6px 0;font:inhe
 .msg.ok{background:var(--ok-bg);color:var(--ok)}
 .msg.warn{background:var(--warn-bg);color:var(--warn)}
 .msg.info{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
-.trade{border-top:1px solid var(--line);padding:10px 0;display:flex;gap:10px;align-items:center}
-.trade:first-child{border-top:0}
-.trade .main{flex:1;min-width:0}
+.tw{border-top:1px solid var(--line)}
+.tw:first-child{border-top:0}
+.trade{padding:10px 0;display:flex;gap:10px;align-items:center}
+.trade .main{flex:1;min-width:0;cursor:pointer;min-height:44px;display:flex;flex-direction:column;justify-content:center}
+.trade .main .chev{float:right;color:var(--muted)}
+.tdetail{padding:4px 0 12px}
+.tdetail .kv{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:14px}
+.tdetail .kv span:first-child{color:var(--muted)}
+.tdetail .jbox{background:var(--bg);border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px}
 .badge{display:inline-block;font-size:12px;font-weight:600;border-radius:6px;padding:1px 7px;margin-right:6px}
 .badge.buy{background:var(--ok-bg);color:var(--ok)}.badge.sell{background:var(--danger-bg);color:var(--danger)}
 .num{font-variant-numeric:tabular-nums}
@@ -841,20 +847,29 @@ function render(){
   const rows = all.sort((a,b) => b.t.date.localeCompare(a.t.date) || b.i - a.i);
   if (!rows.length) list.appendChild(Object.assign(document.createElement("div"), { className:"muted", textContent: state.loaded ? "還沒有交易。到「記錄」新增第一筆。" : "" }));
   for (const {t,i,acct} of rows){
+    const wrap = document.createElement("div"); wrap.className = "tw";
     const d = document.createElement("div"); d.className = "trade";
-    const m = document.createElement("div"); m.className = "main";
+    const m = document.createElement("div"); m.className = "main"; m.setAttribute("role", "button"); m.tabIndex = 0;
     const l1 = document.createElement("div");
     const b = document.createElement("span"); b.className = "badge " + (t.action === "買" ? "buy" : "sell"); b.textContent = t.action;
     const tk = document.createElement("b"); tk.textContent = t.ticker;
     l1.append(b, tk);
     if (acct === "core"){ const bd = document.createElement("span"); bd.className = "badge"; bd.style.cssText = "background:var(--bg);color:var(--muted);margin-left:6px"; bd.textContent = "大盤"; l1.appendChild(bd); }
+    l1.appendChild(Object.assign(document.createElement("span"), { className: "chev", textContent: "▾" }));
     const l2 = document.createElement("div"); l2.className = "muted num";
     const cur = isTwd(t.ticker) ? "NT$" : "$";
     l2.textContent = t.date + "　" + t.shares + " 股 × " + cur + t.price + (t.fee ? "　手續費 " + cur + t.fee : "") + (t.note ? "　" + t.note : "");
     m.append(l1, l2);
     const del = document.createElement("button"); del.className = "ghost danger"; del.textContent = "刪除";
     del.addEventListener("click", () => removeTrade(acct, i));
-    d.append(m, del); list.appendChild(d);
+    d.append(m, del); wrap.appendChild(d);
+    const key = tradeKey(acct, t), det = document.createElement("div"); det.className = "tdetail"; det.hidden = openTradeKey !== key;
+    fillTradeDetail(det, acct, t, key);
+    wrap.appendChild(det);
+    const toggle = () => { openTradeKey = det.hidden ? key : null; det.hidden = !det.hidden; };
+    m.addEventListener("click", toggle);
+    m.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(); } });
+    list.appendChild(wrap);
   }
   // 持股
   const box = $("posBox"); box.textContent = "";
@@ -862,6 +877,52 @@ function render(){
     posSection(box, "選股（美元）", state.trades, "紀錄");
     posSection(box, "大盤（0050 為台幣、VOO 為美元）", state.coreTrades, "大盤紀錄", true);
   }
+}
+let openTradeKey = null;
+const tradeKey = (acct, t) => [acct, t.date, t.ticker, t.action, t.shares, t.price, t.fee, t.note].join("|");
+function fillTradeDetail(det, acct, t, key){
+  det.textContent = "";
+  const cur = isTwd(t.ticker) ? "NT$" : "$";
+  const amt = num(t.shares) * num(t.price), fee = num(t.fee) || 0;
+  const kv = (k, v) => { const r = el("div", "kv"); r.append(el("span", "", k), el("span", "num", v)); det.appendChild(r); };
+  kv("帳戶", acct === "core" ? "大盤" : "選股"); kv("成交日", t.date); kv("動作／代號", t.action + " " + t.ticker);
+  kv("股數", String(t.shares)); kv("每股成交價", cur + t.price); kv("手續費", t.fee ? cur + t.fee : "（沒填）");
+  if (isFinite(amt)) kv("成交金額", cur + fmt(amt)), kv(t.action === "買" ? "含手續費實付" : "扣手續費實收", cur + fmt(t.action === "買" ? amt + fee : amt - fee));
+  kv("備註", t.note || "（沒填）");
+  const js = (state.journal || []).filter(j => j.代號 === t.ticker && j.日期 === t.date && j.動作 === t.action);
+  if (js.length){ for (const j of js){ const bx = el("div", "jbox"); bx.append(el("b", "", "決策日誌"), el("div", "", "理由：" + (j.理由 || "（沒填）")), el("div", "", "賣出／檢討條件：" + (j.賣出條件 || "（沒填）")), el("div", "small", j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : "複查日 " + (j.複查日 || "–"))); det.appendChild(bx); } }
+  else det.appendChild(el("div", "muted", "這筆還沒有決策日誌。"));
+  const bar = el("div", "row"); bar.style.marginTop = "8px";
+  const bEdit = el("button", "ghost", "補記備註／手續費"), bJ = el("button", "ghost", "補記決策日誌");
+  bar.append(bEdit, bJ); det.appendChild(bar);
+  const form = el("div"); det.appendChild(form);
+  const msg = el("div"); det.appendChild(msg);
+  const field = (label, type, value, ph) => { const w = el("div"); w.appendChild(Object.assign(el("label"), { textContent: label })); const i = el(type === "textarea" ? "textarea" : "input"); if (type === "textarea") i.rows = 2; else i.type = "text"; i.value = value || ""; if (ph) i.placeholder = ph; w.appendChild(i); form.appendChild(w); return i; };
+  bEdit.addEventListener("click", () => {
+    form.textContent = ""; const fF = field("手續費（" + cur + "，可空白）", "input", t.fee, "0"), fN = field("備註（可空白）", "input", t.note, "例如 照購入清單買進");
+    fF.inputMode = "decimal";
+    const sv = el("button", "primary", "儲存"); form.appendChild(sv);
+    sv.addEventListener("click", async () => {
+      const f2 = fF.value.trim().replace(/,/g, ""), n2 = fN.value.trim();
+      if (f2 !== "" && !(num(f2) >= 0)) { show(msg, "err", "手續費需為 0 以上的數字，或留空"); return; }
+      sv.disabled = true; show(msg, "info", "儲存中…");
+      try {
+        await mutateTrades(acct, ts => { const j = ts.findIndex(x => x.date === t.date && x.ticker === t.ticker && x.action === t.action && x.shares === t.shares && x.price === t.price && x.fee === t.fee && x.note === t.note); if (j < 0) throw new Error("這筆在 GitHub 上已經找不到（可能已被修改），請重新整理。"); return ts.map((x, k) => k === j ? { ...x, fee: f2, note: n2 } : x); }, "App：補記 " + t.ticker + " " + t.date);
+        openTradeKey = tradeKey(acct, { ...t, fee: f2, note: n2 }); render();
+      } catch (e) { show(msg, "err", e.message); sv.disabled = false; }
+    });
+  });
+  bJ.addEventListener("click", () => {
+    form.textContent = ""; const fR = field("理由（一兩句話）", "textarea", "", "例如 FCF 夠、疑慮是暫時的"), fX = field("賣出或重新檢討的條件", "textarea", "", "例如 FCF 低於 150 億就檢討");
+    const sv = el("button", "primary", "存入決策日誌"); form.appendChild(sv);
+    sv.addEventListener("click", async () => {
+      const r2 = fR.value.trim(), x2 = fX.value.trim();
+      if (!r2 && !x2) { show(msg, "err", "理由與賣出條件至少填一項"); return; }
+      sv.disabled = true; show(msg, "info", "儲存中…");
+      try { await appendJournal({ 日期: t.date, 代號: t.ticker, 動作: t.action, 理由: r2, 賣出條件: x2, 複查日: addDays(t.date, 90), 狀態: "待複查", 複查結果: "" }); openTradeKey = key; render(); renderJournal(); }
+      catch (e) { show(msg, "err", e.message); sv.disabled = false; }
+    });
+  });
 }
 function isTwd(ticker){ return /^\d/.test(String(ticker)); }
 function posSection(box, title, trades, label, mixed){
@@ -1005,7 +1066,7 @@ async function loadJournal(){
     if (f.missing || !f.text.trim()){ state.journal = []; }
     else { const rows = parseCSV(f.text), head = rows[0].map(x => x.trim()); state.journal = rows.slice(1).filter(r => r.some(x => String(x).trim() !== "")).map(r => Object.fromEntries(JHEAD.map(k => [k, (r[head.indexOf(k)] || "").trim()]))); }
   } catch (e){ state.journal = []; }
-  renderJournal();
+  renderJournal(); if (state.loaded) render();
 }
 function renderJournal(){
   const box = $("jList"); if (!box) return; box.textContent = "";
