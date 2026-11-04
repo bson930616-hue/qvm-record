@@ -694,7 +694,7 @@ function drawBuy(){
     for (const k of bl.skipped) det.appendChild(el("div", "small", k.ticker + "（" + k.tier + "）：" + k.why));
     box.appendChild(det);
   }
-  box.appendChild(el("div", "small", "依月度優先度（" + (bl.research_asof || "–") + "）與最新股價計算；價格是上一個收盤價，下單前請在券商 App 再確認。研究輔助，不是投資建議。買進後請到「記錄」補記。"));
+  box.appendChild(el("div", "small", "依月度優先度（" + (bl.research_asof || "–") + "）與最新股價計算；每週六自動更新；價格是計算當天的上一個收盤價。下單前請先按「看報告」下方的「立即更新績效」取得最新，並在券商 App 確認即時價。研究輔助，不是投資建議。買進後請到「記錄」補記。"));
 }
 function drawReb(){
   const sm = state.summary, box = $("rebBox"), card = $("rebCard");
