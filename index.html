@@ -203,6 +203,22 @@ a{color:var(--accent)}
   </div>
   <div class="card fold" id="jCard">
     <h2>決策日誌 <span class="muted" id="jCount"></span></h2>
+    <details id="jAddDet" style="margin:6px 0 10px">
+      <summary class="muted">補記一筆（忘了在買進時填）</summary>
+      <div class="row">
+        <div><label for="jDate">交易日</label><input id="jDate" type="date"></div>
+        <div><label for="jTicker">代號</label><input id="jTicker" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="例如 TMUS"></div>
+      </div>
+      <label for="jAct">動作</label>
+      <select id="jAct"><option value="買">買</option><option value="賣">賣</option></select>
+      <label for="jReason">理由（一兩句話）</label>
+      <textarea id="jReason" rows="2" placeholder="例如 FCF 夠、疑慮是暫時的、保守邊際約 18%"></textarea>
+      <label for="jExit">賣出或重新檢討的條件</label>
+      <textarea id="jExit" rows="2" placeholder="例如 FCF 低於 150 億就檢討"></textarea>
+      <label for="jReview">複查日（空白＝90 天後）</label>
+      <input id="jReview" type="date">
+      <button class="primary" id="btnJAdd">存入決策日誌</button>
+    </details>
     <div id="jMsg"></div>
     <div id="jList"></div>
   </div>
@@ -968,6 +984,19 @@ async function mutateJournal(mutator, message){
     catch (e){ if (String(e.message).startsWith("conflict:") && attempt === 0) continue; throw new Error(String(e.message).replace(/^conflict:/, "寫入衝突，請稍後再試。")); }
   }
 }
+async function addJournalStandalone(){
+  const msg = $("jMsg");
+  const date = $("jDate").value, tk = normTicker($("jTicker").value), reason = $("jReason").value.trim(), exitc = $("jExit").value.trim();
+  if (!date || !tk){ show(msg, "err", "請填交易日與代號"); return; }
+  if (!reason && !exitc){ show(msg, "err", "理由與賣出條件至少填一項"); return; }
+  const btn = $("btnJAdd"); btn.disabled = true; show(msg, "info", "儲存中…");
+  try {
+    await appendJournal({ 日期: date, 代號: tk, 動作: $("jAct").value, 理由: reason, 賣出條件: exitc, 複查日: $("jReview").value || addDays(date, 90), 狀態: "待複查", 複查結果: "" });
+    show(msg, "ok", "已記下 " + tk + " 的決策日誌。");
+    ["jTicker","jReason","jExit","jReview"].forEach(id => $(id).value = ""); renderJournal();
+  } catch (e){ show(msg, "err", e.message); }
+  btn.disabled = false;
+}
 function appendJournal(o){ return mutateJournal(list => [...list, o], "App：決策日誌 " + o.代號 + " " + o.日期); }
 async function loadJournal(){
   if (!conn().token) return;
@@ -1226,6 +1255,7 @@ $("acctCore").addEventListener("click", () => setAcct("core"));
 $("actBuy").addEventListener("click", () => setAction("買"));
 $("actSell").addEventListener("click", () => setAction("賣"));
 $("btnAdd").addEventListener("click", addTrade);
+$("btnJAdd").addEventListener("click", addJournalStandalone);
 $("btnSaveConn").addEventListener("click", saveConn);
 $("btnSaveCfg").addEventListener("click", saveCfg);
 $("sTStock").addEventListener("input", () => { const v = num($("sTStock").value.replace("%","")); $("sTEtf").value = isFinite(v) && v >= 0 && v <= 100 ? String(Math.round((100 - v) * 100) / 100) : ""; });
