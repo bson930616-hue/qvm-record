@@ -1068,33 +1068,85 @@ async function loadJournal(){
   } catch (e){ state.journal = []; }
   renderJournal(); if (state.loaded) render();
 }
+const sameJ = (a, b) => JHEAD.every(k => (a[k] || "") === (b[k] || ""));
 function renderJournal(){
   const box = $("jList"); if (!box) return; box.textContent = "";
   const list = state.journal || [], today = new Date().toISOString().slice(0, 10);
-  const dueN = list.filter(j => j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today).length;
+  const isDue = j => j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today;
+  const dueN = list.filter(isDue).length;
   $("jCount").textContent = list.length ? "（共 " + list.length + " 筆" + (dueN ? "，" + dueN + " 筆該複查" : "") + "）" : "";
   if (dueN) $("jCard").classList.remove("closed");
-  if (!list.length){ box.appendChild(el("div", "muted", "還沒有紀錄。在「記錄」頁新增交易時展開「決策日誌」填寫理由與賣出條件，到複查日就會提醒你回頭檢查。")); return; }
-  [...list].sort((a, b) => (b.日期 || "").localeCompare(a.日期 || "")).forEach(j => {
-    const due = j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today;
-    const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = j.代號 + " " + j.動作;
-    if (due) l.appendChild(el("span", "lev", "該複查了"));
-    t.append(l, el("span", "muted", j.日期));
-    d.append(t);
-    if (j.理由) d.appendChild(el("div", "s", "理由：" + j.理由));
-    if (j.賣出條件) d.appendChild(el("div", "s", "賣出／檢討條件：" + j.賣出條件));
-    d.appendChild(el("div", "small", (j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : "複查日 " + (j.複查日 || "–"))));
-    if (j.狀態 !== "已複查"){
-      const b = el("button", "ghost", "標記已複查"); b.style.marginTop = "6px";
-      b.addEventListener("click", async () => {
-        const res = prompt("複查結論（理由還成立嗎？賣出條件觸發了嗎？）", ""); if (res === null) return;
-        try { await mutateJournal(ls => ls.map(x => (x.日期 === j.日期 && x.代號 === j.代號 && x.動作 === j.動作 && x.理由 === j.理由) ? { ...x, 狀態: "已複查", 複查結果: res.trim() } : x), "App：複查 " + j.代號 + " " + j.日期); renderJournal(); }
-        catch (e){ show($("jMsg"), "err", e.message); }
-      });
-      d.appendChild(b);
-    }
-    box.appendChild(d);
-  });
+  if (!list.length){ box.appendChild(el("div", "muted", "還沒有紀錄。在「記錄」頁新增交易時展開「決策日誌」，或用上面的「補記一筆」；持有期間想法有變，也可以對該檔按「新增更新」。")); return; }
+  const msg = $("jMsg");
+  const groups = {};
+  for (const j of list) (groups[j.代號] = groups[j.代號] || []).push(j);
+  const tickers = Object.keys(groups).sort((x, y) => (groups[y].map(j => j.日期).sort().pop() || "").localeCompare(groups[x].map(j => j.日期).sort().pop() || ""));
+  for (const tk of tickers){
+    const gh = el("div", "rephead"); gh.textContent = tk; box.appendChild(gh);
+    [...groups[tk]].sort((a, b) => (b.日期 || "").localeCompare(a.日期 || "")).forEach(j => {
+      const d = el("div", "hcard"), t = el("div", "t"), l = el("b"); l.textContent = (j.動作 === "更新" ? "更新" : j.動作 + "進");
+      if (isDue(j)) l.appendChild(el("span", "lev", "該複查了"));
+      t.append(l, el("span", "muted", j.日期));
+      d.append(t);
+      const body = el("div"); d.appendChild(body);
+      const view = () => {
+        body.textContent = "";
+        if (j.理由) body.appendChild(el("div", "s", (j.動作 === "更新" ? "看法：" : "理由：") + j.理由));
+        if (j.賣出條件) body.appendChild(el("div", "s", "賣出／檢討條件：" + j.賣出條件));
+        const st = j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : (j.複查日 ? "複查日 " + j.複查日 : "");
+        if (st) body.appendChild(el("div", "small", st));
+        const bar = el("div", "row"); bar.style.marginTop = "6px";
+        const bEdit = el("button", "ghost", "編輯"), bDel = el("button", "ghost danger", "刪除"); bar.append(bEdit, bDel);
+        if (j.狀態 !== "已複查" && j.複查日){
+          const bR = el("button", "ghost", "標記已複查"); bar.appendChild(bR);
+          bR.addEventListener("click", async () => {
+            const res = prompt("複查結論（理由還成立嗎？賣出條件觸發了嗎？）", ""); if (res === null) return;
+            try { await mutateJournal(ls => ls.map(x => sameJ(x, j) ? { ...x, 狀態: "已複查", 複查結果: res.trim() } : x), "App：複查 " + j.代號 + " " + j.日期); renderJournal(); }
+            catch (e){ show(msg, "err", e.message); }
+          });
+        }
+        body.appendChild(bar);
+        bEdit.addEventListener("click", () => edit());
+        bDel.addEventListener("click", async () => {
+          if (!confirm("刪除這筆決策日誌？\n" + j.代號 + " " + j.日期 + (j.理由 ? "\n" + j.理由.slice(0, 40) : ""))) return;
+          try { await mutateJournal(ls => ls.filter(x => !sameJ(x, j)), "App：刪除日誌 " + j.代號 + " " + j.日期); renderJournal(); render(); }
+          catch (e){ show(msg, "err", e.message); }
+        });
+      };
+      const edit = () => {
+        body.textContent = "";
+        const f = (label, kind, val) => { const w = el("div"); w.appendChild(Object.assign(el("label"), { textContent: label })); const i = el(kind === "textarea" ? "textarea" : "input"); if (kind === "textarea") i.rows = 2; else i.type = kind; i.value = val || ""; w.appendChild(i); body.appendChild(w); return i; };
+        const fR = f(j.動作 === "更新" ? "看法" : "理由", "textarea", j.理由), fX = f("賣出或重新檢討的條件", "textarea", j.賣出條件), fD = f("複查日（空白＝不提醒）", "date", j.複查日);
+        const fS = j.狀態 === "已複查" ? f("複查結果", "textarea", j.複查結果) : null;
+        const row = el("div", "row"); row.style.marginTop = "8px";
+        const sv = el("button", "primary", "儲存"), cc = el("button", "ghost", "取消"); row.append(sv, cc); body.appendChild(row);
+        cc.addEventListener("click", view);
+        sv.addEventListener("click", async () => {
+          if (!fR.value.trim() && !fX.value.trim()){ show(msg, "err", "理由與賣出條件至少填一項"); return; }
+          sv.disabled = true;
+          try { await mutateJournal(ls => ls.map(x => sameJ(x, j) ? { ...x, 理由: fR.value.trim(), 賣出條件: fX.value.trim(), 複查日: fD.value, 複查結果: fS ? fS.value.trim() : x.複查結果 } : x), "App：編輯日誌 " + j.代號 + " " + j.日期); renderJournal(); render(); }
+          catch (e){ show(msg, "err", e.message); sv.disabled = false; }
+        });
+      };
+      view(); box.appendChild(d);
+    });
+    const bu = el("button", "ghost", "＋ 新增 " + tk + " 的更新"); bu.style.cssText = "width:100%;margin:6px 0 10px";
+    const uf = el("div"); uf.hidden = true;
+    bu.addEventListener("click", () => {
+      uf.hidden = !uf.hidden; if (!uf.hidden && !uf.firstChild){
+        const mk = (label, kind, ph) => { const w = el("div"); w.appendChild(Object.assign(el("label"), { textContent: label })); const i = el(kind === "textarea" ? "textarea" : "input"); if (kind === "textarea") { i.rows = 2; if (ph) i.placeholder = ph; } else i.type = kind; w.appendChild(i); uf.appendChild(w); return i; };
+        const nD = mk("日期", "date"); nD.value = today; const nT = mk("現在的看法（例如財報後有什麼變化）", "textarea", "例如 Q4 財報：FCF 符合預期，檢討條件未觸發"); const nX = mk("目前的檢討條件（可空白，沿用先前的）", "textarea"); const nR = mk("下次複查日（空白＝不提醒）", "date");
+        const sv = el("button", "primary", "存入更新"); uf.appendChild(sv);
+        sv.addEventListener("click", async () => {
+          if (!nT.value.trim()){ show(msg, "err", "請寫下現在的看法"); return; }
+          sv.disabled = true;
+          try { await appendJournal({ 日期: nD.value || today, 代號: tk, 動作: "更新", 理由: nT.value.trim(), 賣出條件: nX.value.trim(), 複查日: nR.value, 狀態: "更新", 複查結果: "" }); renderJournal(); }
+          catch (e){ show(msg, "err", e.message); sv.disabled = false; }
+        });
+      }
+    });
+    box.append(bu, uf);
+  }
 }
 
 /* ---------- 設定檔 ---------- */
