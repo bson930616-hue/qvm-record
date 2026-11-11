@@ -371,7 +371,7 @@ const LS = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
-const APP_VER = "v25";
+const APP_VER = "v26";
 const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv", journal: "V10_決策日誌.csv" };
 const JHEAD = ["日期","代號","動作","理由","賣出條件","複查日","狀態","複查結果"];
 const HEADER = ["日期","代號","動作","股數","價格","手續費","備註"];
@@ -1000,6 +1000,9 @@ async function addTrade(){
               fee: $("fFee").value.trim().replace(/,/g,"").replace(/^\$/,""), note: $("fNote").value.trim() };
   const problems = validateTrade(t);
   if (problems.length){ show(msg, "err", problems.join("\n")); return; }
+  if (t.fee === "" && /^[\d.,]+$/.test(t.note) && confirm("備註只有數字「" + t.note + "」，但手續費是空白。\n這是不是手續費？\n\n按「確定」：把它移到手續費欄，讓你確認金額後再儲存（這次先不存）。\n按「取消」：照原樣當備註儲存。")){
+    $("fFee").value = t.note; $("fNote").value = ""; show(msg, "info", "已把備註移到手續費欄，請確認金額（例如 0.13）後再按儲存。"); $("fFee").focus(); return;
+  }
   const pool = acct === "core" ? state.coreTrades : state.trades;
   if (state.loaded && pool.some(x => x.date === t.date && x.ticker === t.ticker && x.action === t.action &&
         num(x.shares) === num(t.shares) && num(x.price) === num(t.price)) && !confirm("已經有一筆完全相同的交易，確定還要再存一筆嗎？")) return;
@@ -1013,6 +1016,15 @@ async function addTrade(){
       catch (je){ jnote = "（交易已存，但決策日誌沒寫成功：" + je.message + "）"; }
     }
     show(msg, "ok", "已儲存：" + t.action + " " + t.ticker + " " + t.shares + " 股 @ $" + t.price + jnote);
+    if (acct === "us" && t.action === "買" && !reason && !exitc){
+      const nb = el("button", "ghost", "現在補寫買進理由"); nb.style.cssText = "margin-top:8px;width:100%";
+      nb.addEventListener("click", () => {
+        switchTab("list"); $("jCard").classList.remove("closed"); $("jAddDet").open = true;
+        $("jDate").value = t.date; $("jTicker").value = t.ticker; $("jAct").value = "買";
+        $("jCard").scrollIntoView({ behavior: "smooth", block: "start" }); $("jReason").focus();
+      });
+      msg.appendChild(el("div", "small", "這筆個股買進還沒寫決策日誌。說得出理由再持有，一年後也才能檢討判斷（可以先跳過，之後在「交易」頁補記）。")); msg.appendChild(nb);
+    }
     ["fTicker","fShares","fPrice","fFee","fNote","fReason","fExit","fReview"].forEach(id => $(id).value = "");
     render();
   } catch (e){ show(msg, "err", e.message); }
