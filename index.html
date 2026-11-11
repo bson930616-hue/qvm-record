@@ -352,6 +352,7 @@ a{color:var(--accent)}
   <div class="card">
     <button class="link" id="btnClear">清除這支手機上的金鑰與設定</button>
   </div>
+  <div class="muted" style="text-align:center;margin:8px 0 16px" id="verLine"></div>
 </section>
 
 <nav>
@@ -370,6 +371,7 @@ const LS = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
+const APP_VER = "v25";
 const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv", journal: "V10_決策日誌.csv" };
 const JHEAD = ["日期","代號","動作","理由","賣出條件","複查日","狀態","複查結果"];
 const HEADER = ["日期","代號","動作","股數","價格","手續費","備註"];
@@ -890,7 +892,7 @@ function fillTradeDetail(det, acct, t, key){
   if (isFinite(amt)) kv("成交金額", cur + fmt(amt)), kv(t.action === "買" ? "含手續費實付" : "扣手續費實收", cur + fmt(t.action === "買" ? amt + fee : amt - fee));
   kv("備註", t.note || "（沒填）");
   const js = (state.journal || []).filter(j => j.代號 === t.ticker && j.日期 === t.date && j.動作 === t.action);
-  if (js.length){ for (const j of js){ const bx = el("div", "jbox"); bx.append(el("b", "", "決策日誌"), el("div", "", "理由：" + (j.理由 || "（沒填）")), el("div", "", "賣出／檢討條件：" + (j.賣出條件 || "（沒填）")), el("div", "small", j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : "複查日 " + (j.複查日 || "–"))); det.appendChild(bx); } }
+  if (js.length){ for (const j of js){ const bx = el("div", "jbox"); bx.append(el("b", "", "決策日誌"), el("div", "", "理由：" + (j.理由 || "（沒填）")), el("div", "", "賣出／檢討條件：" + (j.賣出條件 || "（沒填）")), el("div", "small", j.狀態 === "已複查" ? "已複查" + (j.複查結果 ? "：" + j.複查結果 : "") : "複查日 " + (j.複查日 || "–"))); const bgo = el("button", "ghost", "編輯這筆日誌"); bgo.style.marginTop = "6px"; bgo.addEventListener("click", () => { $("jCard").classList.remove("closed"); $("jCard").scrollIntoView({ behavior: "smooth", block: "start" }); }); bx.appendChild(bgo); det.appendChild(bx); } }
   else det.appendChild(el("div", "muted", "這筆還沒有決策日誌。"));
   const bar = el("div", "row"); bar.style.marginTop = "8px";
   const bEdit = el("button", "ghost", "補記備註／手續費"), bJ = el("button", "ghost", "補記決策日誌");
@@ -1367,6 +1369,7 @@ $("acctUs").addEventListener("click", () => setAcct("us"));
 $("acctCore").addEventListener("click", () => setAcct("core"));
 $("actBuy").addEventListener("click", () => setAction("買"));
 $("actSell").addEventListener("click", () => setAction("賣"));
+$("verLine").textContent = "App 版本 " + APP_VER + "（若功能和說明不符，請完全關閉 App 後重開兩次）";
 $("btnAdd").addEventListener("click", addTrade);
 $("btnJAdd").addEventListener("click", addJournalStandalone);
 $("btnSaveConn").addEventListener("click", saveConn);
