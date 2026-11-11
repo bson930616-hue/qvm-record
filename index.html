@@ -371,7 +371,7 @@ const LS = {
   set(k,v){ try { localStorage.setItem(k,v); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} },
 };
-const APP_VER = "v26";
+const APP_VER = "v27";
 const FILES = { us: "V10_交易紀錄.csv", core: "V10_大盤紀錄.csv", cfg: "V10_設定.csv", journal: "V10_決策日誌.csv" };
 const JHEAD = ["日期","代號","動作","理由","賣出條件","複查日","狀態","複查結果"];
 const HEADER = ["日期","代號","動作","股數","價格","手續費","備註"];
@@ -1085,7 +1085,7 @@ async function loadJournal(){
 const sameJ = (a, b) => JHEAD.every(k => (a[k] || "") === (b[k] || ""));
 function renderJournal(){
   const box = $("jList"); if (!box) return; box.textContent = "";
-  const list = state.journal || [], today = new Date().toISOString().slice(0, 10);
+  const list = state.journal || [], today = todayLocal();
   const isDue = j => j.狀態 !== "已複查" && j.複查日 && j.複查日 <= today;
   const dueN = list.filter(isDue).length;
   $("jCount").textContent = list.length ? "（共 " + list.length + " 筆" + (dueN ? "，" + dueN + " 筆該複查" : "") + "）" : "";
